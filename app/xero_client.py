@@ -138,17 +138,6 @@ def create_invoice(access_token: str, tenant_id: str, order, xero_contact_id: st
     return invoice["InvoiceID"], invoice.get("InvoiceNumber", "")
 
 
-def list_contacts_updated_since(access_token: str, tenant_id: str, since: datetime) -> list[dict]:
-    headers = dict(_headers(access_token, tenant_id))
-    headers["If-Modified-Since"] = since.strftime("%a, %d %b %Y %H:%M:%S GMT")
-    resp = _get(f"{API_BASE}/Contacts", headers=headers)
-    if resp.status_code == 304:
-        return []
-    if resp.status_code != 200:
-        raise XeroError(f"Could not list Xero contacts: {resp.status_code} {resp.text}")
-    return resp.json().get("Contacts", [])
-
-
 def is_expired(expires_at: datetime) -> bool:
     now = datetime.now(timezone.utc)
     if expires_at.tzinfo is None:

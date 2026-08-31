@@ -107,11 +107,10 @@
       <a href="/materials" class="{{ 'active' if active=='materials' }}"><span class="dot"></span>Materials</a>
       <a href="/products" class="{{ 'active' if active=='products' }}"><span class="dot"></span>Products &amp; Mixes</a>
       <a href="/drivers" class="{{ 'active' if active=='drivers' }}"><span class="dot"></span>Drivers</a>
+      <a href="/vehicles" class="{{ 'active' if active=='vehicles' }}"><span class="dot"></span>Vehicles</a>
+      <a href="/vehicle-checks" class="{{ 'active' if active=='vehicle-checks' }}"><span class="dot"></span>Vehicle Checks</a>
+      <a href="/reports" class="{{ 'active' if active=='reports' }}"><span class="dot"></span>Sales Reports</a>
       <a href="/xero" class="{{ 'active' if active=='xero' }}"><span class="dot"></span>Xero</a>
-    </nav>
-    <div class="sidebar-section">Coming next</div>
-    <nav>
-      <a class="disabled"><span class="dot"></span>Sales Reporting</a>
     </nav>
     <div class="sidebar-spacer"></div>
     <div class="sidebar-user">
@@ -137,5 +136,39 @@
     </main>
   </div>
   </div>
+
+  {% if user and user.role != 'Driver' %}
+  <div id="toast-stack" style="position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:10px;z-index:999;"></div>
+  <script>
+    (function () {
+      const stack = document.getElementById('toast-stack');
+      let since = new Date().toISOString();  // only notify about drops completed after this page loaded
+
+      function showToast(text) {
+        const el = document.createElement('div');
+        el.style.cssText = 'background:#17191C;color:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;font-size:14px;max-width:320px;animation:toast-in .2s ease-out;';
+        el.innerHTML = `<span style="flex:1;">✅ ${text}</span><button style="background:none;border:0;color:#9aa0a8;font-size:16px;cursor:pointer;line-height:1;">✕</button>`;
+        el.querySelector('button').onclick = () => el.remove();
+        stack.appendChild(el);
+        setTimeout(() => el.remove(), 15000);  // auto-clear after 15s if not dismissed
+      }
+
+      async function poll() {
+        try {
+          const res = await fetch(`/api/notifications/deliveries-since?since=${encodeURIComponent(since)}`);
+          if (res.ok) {
+            const deliveries = await res.json();
+            deliveries.forEach(d => showToast(`${d.order_number} delivered — ${d.driver_name} for ${d.customer_name}`));
+            if (deliveries.length) since = deliveries[deliveries.length - 1].signed_at;
+          }
+        } catch (e) { /* quietly retry next cycle */ }
+      }
+      setInterval(poll, 20000);
+    })();
+  </script>
+  <style>
+    @keyframes toast-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  </style>
+  {% endif %}
 </body>
 </html>

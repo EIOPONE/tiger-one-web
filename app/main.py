@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -196,7 +196,7 @@ def set_order_allocate_stock(order_id: int, allocate: bool, db: Session = Depend
 @app.post("/api/orders/{order_id}/deliveries")
 def schedule_delivery(order_id: int, driver_name: str, vehicle: str,
                        db: Session = Depends(db_dependency), user=Depends(current_user)):
-    delivery = crud.create_delivery(db, order_id, driver_name, vehicle)
+    delivery = crud.create_delivery(db, order_id, driver_name=driver_name, vehicle=vehicle)
     return {"delivery_id": delivery.delivery_id, "driver_link": f"/d/{delivery.access_token}"}
 
 
@@ -435,6 +435,7 @@ def orders_page(request: Request, db: Session = Depends(db_dependency)):
     return templates.TemplateResponse(request, "orders.html", {
         "user": user, "active": "orders", "orders": orders, "customers": customers,
         "products_json": products_json(db), "drivers": crud.list_drivers(db),
+        "vehicles": crud.list_vehicles(db),
     })
 
 
@@ -513,8 +514,8 @@ def order_pdf(order_id: int, request: Request, db: Session = Depends(db_dependen
 
 @app.post("/orders/{order_id}/deliveries")
 def orders_schedule_delivery_page(
-    request: Request, order_id: int, vehicle: str = Form(...),
-    driver_user_id: str = Form(""), scheduled_date: str = Form(""),
+    request: Request, order_id: int,
+    driver_user_id: str = Form(""), vehicle_id: str = Form(""), scheduled_date: str = Form(""),
     db: Session = Depends(db_dependency),
 ):
     user = require_office_user(request, db)
@@ -522,10 +523,31 @@ def orders_schedule_delivery_page(
         return user
     parsed_date = date.fromisoformat(scheduled_date) if scheduled_date else None
     crud.create_delivery(
-        db, order_id, vehicle,
+        db, order_id,
         driver_user_id=int(driver_user_id) if driver_user_id else None,
+        vehicle_id=int(vehicle_id) if vehicle_id else None,
         scheduled_date=parsed_date,
     )
+    return RedirectResponse("/orders", status_code=303)
+
+
+@app.post("/orders/{order_id}/deliveries/{delivery_id}/reassign")
+def orders_reassign_delivery(
+    request: Request, order_id: int, delivery_id: int,
+    driver_user_id: str = Form(""), vehicle_id: str = Form(""),
+    db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        crud.reassign_delivery(
+            db, delivery_id,
+            driver_user_id=int(driver_user_id) if driver_user_id else None,
+            vehicle_id=int(vehicle_id) if vehicle_id else None,
+        )
+    except ValueError:
+        pass  # e.g. tried to reassign an already-Delivered run — silently ignored, nothing to do
     return RedirectResponse("/orders", status_code=303)
 
 
@@ -551,6 +573,117 @@ def drivers_new(
         return user
     crud.create_driver(db, full_name, username, pin)
     return RedirectResponse("/drivers", status_code=303)
+
+
+@app.post("/drivers/{driver_user_id}/deactivate")
+def drivers_deactivate(request: Request, driver_user_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_driver(db, driver_user_id)
+    return RedirectResponse("/drivers", status_code=303)
+
+
+# --- vehicles (office admin) ----------------------------------------------------------------
+
+@app.get("/vehicles", response_class=HTMLResponse)
+def vehicles_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "vehicles.html", {
+        "user": user, "active": "vehicles", "vehicles": crud.list_vehicles(db),
+    })
+
+
+@app.post("/vehicles/new")
+def vehicles_new(request: Request, registration: str = Form(...), description: str = Form(""),
+                  db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_vehicle(db, registration, description)
+    return RedirectResponse("/vehicles", status_code=303)
+
+
+@app.post("/vehicles/{vehicle_id}/deactivate")
+def vehicles_deactivate(request: Request, vehicle_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_vehicle(db, vehicle_id)
+    return RedirectResponse("/vehicles", status_code=303)
+
+
+@app.get("/vehicle-checks", response_class=HTMLResponse)
+def vehicle_checks_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    import json
+    checks = crud.list_vehicle_checks(db)
+    checklist_labels = {key: label for group in crud.WALKAROUND_CHECKLIST for key, label in group["checks"]}
+    for check in checks:
+        check.parsed_items = json.loads(check.items_json)  # attach for template convenience
+    return templates.TemplateResponse(request, "vehicle_checks.html", {
+        "user": user, "active": "vehicle-checks", "checks": checks, "checklist_labels": checklist_labels,
+    })
+
+
+# --- office notifications (delivery completed toast) -----------------------------------------
+
+@app.get("/api/notifications/deliveries-since")
+def notifications_deliveries_since(request: Request, since: str, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        since_dt = datetime.fromisoformat(since)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid 'since' timestamp")
+    deliveries = crud.deliveries_completed_since(db, since_dt)
+    return [{
+        "delivery_id": d.delivery_id, "order_number": d.order.order_number,
+        "customer_name": d.order.customer.display_name, "driver_name": d.driver_name,
+        "signed_at": d.pod_signed_at.isoformat(),
+    } for d in deliveries]
+
+
+# --- sales reports -----------------------------------------------------------------------
+
+@app.get("/reports", response_class=HTMLResponse)
+def reports_page(request: Request, date_from: str = "", date_to: str = "", db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    today = date.today()
+    date_from = date_from or (today - timedelta(days=7)).isoformat()
+    date_to = date_to or today.isoformat()
+    return templates.TemplateResponse(request, "reports.html", {
+        "user": user, "active": "reports",
+        "report": crud.sales_report(db, date_from, date_to),
+    })
+
+
+@app.get("/reports/export.csv")
+def reports_export_csv(request: Request, date_from: str, date_to: str, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    import csv
+    import io
+    report = crud.sales_report(db, date_from, date_to)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Order number", "Date", "Customer", "Project", "Subtotal", "Tax", "Total"])
+    for o in report["orders"]:
+        writer.writerow([o.order_number, o.requested_date, o.customer.display_name, o.project,
+                          f"{o.subtotal:.2f}", f"{o.tax_total:.2f}", f"{o.total:.2f}"])
+    writer.writerow([])
+    writer.writerow(["", "", "", "TOTAL", f"{report['subtotal']:.2f}", f"{report['tax_total']:.2f}", f"{report['total']:.2f}"])
+    filename = f"Sales_Report_{date_from}_to_{date_to}.csv"
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # --- Xero ------------------------------------------------------------------------------
@@ -610,18 +743,6 @@ def xero_disconnect(request: Request, db: Session = Depends(db_dependency)):
     return RedirectResponse("/xero", status_code=303)
 
 
-@app.post("/xero/sync-now")
-def xero_sync_now(request: Request, db: Session = Depends(db_dependency)):
-    user = require_office_user(request, db)
-    if isinstance(user, RedirectResponse):
-        return user
-    try:
-        count = crud.pull_customers_from_xero(db, XERO_CLIENT_ID, XERO_CLIENT_SECRET)
-        return RedirectResponse(f"/xero?synced={count}", status_code=303)
-    except Exception as exc:
-        return RedirectResponse(f"/xero?error={exc}", status_code=303)
-
-
 
 @app.get("/driver/login", response_class=HTMLResponse)
 def driver_login_page(request: Request, db: Session = Depends(db_dependency)):
@@ -654,7 +775,43 @@ def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
         return RedirectResponse("/driver/login", status_code=303)
     return templates.TemplateResponse(request, "driver_dashboard.html", {
         "user": user, "jobs": crud.deliveries_for_driver(db, user.user_id),
+        "checked_in_today": crud.driver_has_checked_in_today(db, user.user_id),
     })
+
+
+# --- driver vehicle check (daily walkaround, DVSA-style) ---------------------------------
+
+@app.get("/driver/vehicle-check", response_class=HTMLResponse)
+def driver_vehicle_check_page(request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    return templates.TemplateResponse(request, "driver_vehicle_check.html", {
+        "user": user, "vehicles": crud.list_vehicles(db), "checklist": crud.WALKAROUND_CHECKLIST,
+    })
+
+
+@app.post("/driver/vehicle-check/submit")
+async def driver_vehicle_check_submit(request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    form = await request.form()
+    vehicle_id = int(form["vehicle_id"])
+    all_keys = [key for group in crud.WALKAROUND_CHECKLIST for key, _ in group["checks"]]
+    items = {key: form.get(key, "defect") for key in all_keys}  # unticked = treated as needing attention
+
+    signature = form.get("signature")
+    sig_name = ""
+    if signature is not None and hasattr(signature, "file"):
+        sig_name = f"{uuid.uuid4().hex}.png"
+        (UPLOAD_DIR / sig_name).write_bytes(signature.file.read())
+
+    crud.save_vehicle_check(
+        db, user.user_id, vehicle_id, items,
+        defect_notes=form.get("defect_notes", ""), signed_by=user.full_name, signature_path=sig_name,
+    )
+    return RedirectResponse("/driver", status_code=303)
 
 
 # --- driver-facing page: no login, just the link (POD + tracking) ------------------------

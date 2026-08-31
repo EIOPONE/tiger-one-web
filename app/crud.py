@@ -62,6 +62,15 @@ def list_drivers(db: Session) -> list[models.AppUser]:
     ))
 
 
+def deactivate_driver(db: Session, driver_user_id: int) -> None:
+    """Soft-delete — keeps the account (and its history of deliveries/checks
+    intact) but takes it off the active driver list and blocks login."""
+    driver = db.get(models.AppUser, driver_user_id)
+    if driver:
+        driver.active = False
+        db.flush()
+
+
 def authenticate(db: Session, username: str, password: str) -> models.AppUser | None:
     user = db.scalar(
         select(models.AppUser).where(
@@ -523,19 +532,48 @@ def database_summary(db: Session) -> dict:
 # --- deliveries: POD + tracking (new) ----------------------------------------------
 
 def create_delivery(
-    db: Session, order_id: int, vehicle: str,
+    db: Session, order_id: int,
     driver_user_id: int | None = None, driver_name: str = "",
+    vehicle_id: int | None = None, vehicle: str = "",
     scheduled_date: date | None = None,
 ) -> models.Delivery:
     if driver_user_id and not driver_name:
         driver = db.get(models.AppUser, driver_user_id)
         driver_name = driver.full_name if driver else ""
+    if vehicle_id and not vehicle:
+        vehicle_row = db.get(models.Vehicle, vehicle_id)
+        vehicle = vehicle_row.registration if vehicle_row else ""
     delivery = models.Delivery(
         order_id=order_id, driver_user_id=driver_user_id, driver_name=driver_name,
-        vehicle=vehicle, scheduled_date=scheduled_date or datetime.now(timezone.utc).date(),
+        vehicle_id=vehicle_id, vehicle=vehicle,
+        scheduled_date=scheduled_date or datetime.now(timezone.utc).date(),
         status="Scheduled", access_token=new_access_token(),
     )
     db.add(delivery)
+    db.flush()
+    return delivery
+
+
+def reassign_delivery(
+    db: Session, delivery_id: int,
+    driver_user_id: int | None, vehicle_id: int | None,
+) -> models.Delivery:
+    """Change who's doing a scheduled/en-route delivery — a job handed to
+    the wrong driver, a truck that's broken down, etc. Not allowed once
+    it's already Delivered (that history shouldn't change retroactively)."""
+    delivery = db.get(models.Delivery, delivery_id)
+    if not delivery:
+        raise ValueError("Delivery not found")
+    if delivery.status == "Delivered":
+        raise ValueError("Can't reassign a delivery that's already been signed off")
+    if driver_user_id:
+        driver = db.get(models.AppUser, driver_user_id)
+        delivery.driver_user_id = driver_user_id
+        delivery.driver_name = driver.full_name if driver else ""
+    if vehicle_id:
+        vehicle_row = db.get(models.Vehicle, vehicle_id)
+        delivery.vehicle_id = vehicle_id
+        delivery.vehicle = vehicle_row.registration if vehicle_row else ""
     db.flush()
     return delivery
 
@@ -546,6 +584,33 @@ def get_delivery(db: Session, delivery_id: int) -> models.Delivery | None:
 
 def get_delivery_by_token(db: Session, token: str) -> models.Delivery | None:
     return db.scalar(select(models.Delivery).where(models.Delivery.access_token == token))
+
+
+# --- vehicles ---------------------------------------------------------------------------
+
+def save_vehicle(db: Session, registration: str, description: str = "", vehicle_id: int | None = None) -> models.Vehicle:
+    if vehicle_id:
+        vehicle = db.get(models.Vehicle, vehicle_id)
+        vehicle.registration = registration.strip().upper()
+        vehicle.description = description.strip()
+    else:
+        vehicle = models.Vehicle(registration=registration.strip().upper(), description=description.strip())
+        db.add(vehicle)
+    db.flush()
+    return vehicle
+
+
+def list_vehicles(db: Session) -> list[models.Vehicle]:
+    return list(db.scalars(
+        select(models.Vehicle).where(models.Vehicle.active.is_(True)).order_by(models.Vehicle.registration)
+    ))
+
+
+def deactivate_vehicle(db: Session, vehicle_id: int) -> None:
+    vehicle = db.get(models.Vehicle, vehicle_id)
+    if vehicle:
+        vehicle.active = False
+        db.flush()
 
 
 def deliveries_for_driver(db: Session, driver_user_id: int, include_delivered: bool = False) -> list[models.Delivery]:
@@ -695,30 +760,120 @@ def sync_order_to_xero(db: Session, order: models.Order, client_id: str, client_
         pass
 
 
-def pull_customers_from_xero(db: Session, client_id: str, client_secret: str) -> int:
-    """Manual pull, triggered by the office's 'Sync now' button — Xero
-    Contacts updated since the last sync get created or matched to existing
-    Tiger One customers by their stored xero_contact_id. Returns the count
-    touched. Raises if Xero isn't connected (unlike the best-effort push
-    functions, this one has a person waiting on the result)."""
-    connection = ensure_valid_xero_token(db, client_id, client_secret)
-    if not connection:
-        raise ValueError("Xero isn't connected")
-    since = connection.last_customer_sync_at or (datetime.now(timezone.utc) - timedelta(days=365))
-    contacts = xero_client.list_contacts_updated_since(connection.access_token, connection.tenant_id, since)
-    touched = 0
-    for contact in contacts:
-        existing = db.scalar(select(models.Customer).where(models.Customer.xero_contact_id == contact["ContactID"]))
-        values = {"display_name": contact.get("Name", "") or "(unnamed)", "email": contact.get("EmailAddress", "") or ""}
-        if existing:
-            for key, value in values.items():
-                setattr(existing, key, value)
-        else:
-            db.add(models.Customer(
-                customer_type="Commercial", contact_name="", xero_contact_id=contact["ContactID"],
-                xero_synced_at=datetime.now(timezone.utc), **values,
-            ))
-        touched += 1
-    connection.last_customer_sync_at = datetime.now(timezone.utc)
+# --- sales reports ----------------------------------------------------------------------
+
+def sales_report(db: Session, date_from: str, date_to: str) -> dict:
+    """Completed orders (i.e. actually delivered) with a requested_date in
+    [date_from, date_to] inclusive — both as 'YYYY-MM-DD' strings, matching
+    how requested_date is stored. This is what the office's date-range
+    report button and its CSV export both run off."""
+    orders = list(db.scalars(
+        select(models.Order)
+        .where(
+            models.Order.status == "Completed",
+            models.Order.requested_date >= date_from,
+            models.Order.requested_date <= date_to,
+        )
+        .order_by(models.Order.requested_date, models.Order.order_number)
+    ))
+    subtotal = sum((o.subtotal for o in orders), Decimal("0"))
+    tax_total = sum((o.tax_total for o in orders), Decimal("0"))
+    total = sum((o.total for o in orders), Decimal("0"))
+    return {
+        "date_from": date_from, "date_to": date_to, "order_count": len(orders),
+        "subtotal": subtotal, "tax_total": tax_total, "total": total,
+        "orders": orders,
+    }
+
+
+# --- vehicle checks (daily walkaround, DVSA-style) --------------------------------------
+
+# The standard DVSA HGV daily walkaround checklist, condensed to what
+# applies to a rigid mixer truck (no trailer-coupling items). Grouped the
+# same way the official guidance groups them: inside the cab, then outside.
+# Stored by key in items_json — add/remove/reorder here any time without a
+# database migration.
+WALKAROUND_CHECKLIST = [
+    {"group": "Inside the cab", "checks": [
+        ("front_view", "Front view — mirrors, cameras and glass clear and undamaged"),
+        ("wipers_washers", "Windscreen wipers and washers working"),
+        ("dash_warning_lights", "Dashboard warning lights and gauges working correctly"),
+        ("steering", "Steering — no excessive play, doesn't jam"),
+        ("horn", "Horn works and is accessible"),
+        ("brakes_air", "Brakes and air build-up — no leaks, warning system works"),
+        ("seatbelts", "Seatbelts — no cuts or damage, secure and retract properly"),
+        ("cab_doors_steps", "Cab, doors and steps secure and safe to use"),
+    ]},
+    {"group": "Outside the vehicle", "checks": [
+        ("lights_indicators", "Lights and indicators all working, lenses clean and correct colour"),
+        ("fuel_oil_leaks", "No fuel or oil leaks underneath the vehicle"),
+        ("body_wings", "Body, wings and panels secure"),
+        ("battery", "Battery secure, good condition, not leaking"),
+        ("adblue", "AdBlue / diesel exhaust fluid topped up"),
+        ("exhaust_smoke", "No excessive engine exhaust smoke"),
+        ("tyres_wheels", "Tyres and wheels — tread, pressure, no damage, all nuts tight"),
+        ("number_plate", "Number plate clean, undamaged and correctly displayed"),
+        ("reflectors_markings", "Reflectors and markings present, clean and secure"),
+    ]},
+    {"group": "Concrete equipment", "checks": [
+        ("mixer_drum", "Mixer drum / chute condition and operation"),
+        ("water_tank", "Water tank / hopper — no leaks, adequate level"),
+        ("load_security", "Load and equipment secure"),
+    ]},
+]
+
+
+def get_todays_vehicle_check(db: Session, driver_user_id: int, vehicle_id: int) -> models.VehicleCheck | None:
+    today = datetime.now(timezone.utc).date()
+    return db.scalar(
+        select(models.VehicleCheck).where(
+            models.VehicleCheck.driver_user_id == driver_user_id,
+            models.VehicleCheck.vehicle_id == vehicle_id,
+            models.VehicleCheck.check_date == today,
+        )
+    )
+
+
+def driver_has_checked_in_today(db: Session, driver_user_id: int) -> bool:
+    """Used for the dashboard reminder banner — true if this driver has
+    submitted a walkaround check for ANY vehicle today."""
+    today = datetime.now(timezone.utc).date()
+    return db.scalar(
+        select(func.count()).select_from(models.VehicleCheck).where(
+            models.VehicleCheck.driver_user_id == driver_user_id,
+            models.VehicleCheck.check_date == today,
+        )
+    ) > 0
+
+
+def save_vehicle_check(
+    db: Session, driver_user_id: int, vehicle_id: int, items: dict,
+    defect_notes: str, signed_by: str, signature_path: str,
+) -> models.VehicleCheck:
+    import json
+    has_defects = any(v == "defect" for v in items.values())
+    check = models.VehicleCheck(
+        driver_user_id=driver_user_id, vehicle_id=vehicle_id,
+        check_date=datetime.now(timezone.utc).date(), items_json=json.dumps(items),
+        has_defects=has_defects, defect_notes=defect_notes.strip(),
+        signed_by=signed_by.strip(), signature_path=signature_path,
+    )
+    db.add(check)
     db.flush()
-    return touched
+    return check
+
+
+def list_vehicle_checks(db: Session, limit: int = 50) -> list[models.VehicleCheck]:
+    return list(db.scalars(
+        select(models.VehicleCheck).order_by(models.VehicleCheck.submitted_at.desc()).limit(limit)
+    ))
+
+
+# --- office notifications (delivery completed toast) ------------------------------------
+
+def deliveries_completed_since(db: Session, since: datetime) -> list[models.Delivery]:
+    return list(db.scalars(
+        select(models.Delivery)
+        .where(models.Delivery.status == "Delivered", models.Delivery.pod_signed_at > since)
+        .order_by(models.Delivery.pod_signed_at)
+    ))

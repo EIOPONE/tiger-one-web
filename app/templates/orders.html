@@ -84,9 +84,25 @@
       <td>
         {% if o.deliveries %}
           {% for d in o.deliveries %}
-            <div>
-              <a href="/d/{{ d.access_token }}" target="_blank">{{ d.driver_name }} · {{ d.status }}</a>
+            <div style="margin-bottom:6px;">
+              <a href="/d/{{ d.access_token }}" target="_blank">{{ d.driver_name }} · {{ d.vehicle }} · {{ d.status }}</a>
               {% if d.status == 'Delivered' %}<a href="/api/deliveries/{{ d.delivery_id }}/pod.pdf" target="_blank" style="margin-left:6px;">POD PDF</a>{% endif %}
+              {% if d.status != 'Delivered' %}
+                <details style="margin-top:4px;">
+                  <summary class="muted" style="font-size:12px;cursor:pointer;">Reassign</summary>
+                  <form method="post" action="/orders/{{ o.order_id }}/deliveries/{{ d.delivery_id }}/reassign" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                    <select name="driver_user_id" style="width:110px;">
+                      <option value="">Driver…</option>
+                      {% for dr in drivers %}<option value="{{ dr.user_id }}" {{ 'selected' if d.driver_user_id == dr.user_id }}>{{ dr.full_name }}</option>{% endfor %}
+                    </select>
+                    <select name="vehicle_id" style="width:90px;">
+                      <option value="">Vehicle…</option>
+                      {% for v in vehicles %}<option value="{{ v.vehicle_id }}" {{ 'selected' if d.vehicle_id == v.vehicle_id }}>{{ v.registration }}</option>{% endfor %}
+                    </select>
+                    <button class="btn btn-outline btn-small" type="submit">Save</button>
+                  </form>
+                </details>
+              {% endif %}
             </div>
           {% endfor %}
         {% elif o.status == 'Confirmed' %}
@@ -95,7 +111,10 @@
               <option value="" disabled selected>Driver</option>
               {% for d in drivers %}<option value="{{ d.user_id }}">{{ d.full_name }}</option>{% endfor %}
             </select>
-            <input type="text" name="vehicle" placeholder="vehicle" style="width:70px;" required>
+            <select name="vehicle_id" style="width:90px;" required>
+              <option value="" disabled selected>Vehicle</option>
+              {% for v in vehicles %}<option value="{{ v.vehicle_id }}">{{ v.registration }}</option>{% endfor %}
+            </select>
             <input type="date" name="scheduled_date" style="width:130px;">
             <button class="btn btn-outline btn-small" type="submit">Schedule</button>
           </form>

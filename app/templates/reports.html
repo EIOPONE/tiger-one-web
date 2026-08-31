@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Sales Reports — Tiger One{% endblock %}
+{% block page_title %}Sales reports{% endblock %}
+{% block page_subtitle %}Completed (delivered) orders, by requested date. Pick any range — weekly, monthly, whatever you need.{% endblock %}
+{% block content %}
+
+<div class="card">
+  <form method="get" action="/reports" style="display:flex;gap:16px;align-items:end;flex-wrap:wrap;">
+    <div>
+      <label for="date_from">From</label>
+      <input type="date" id="date_from" name="date_from" value="{{ report.date_from }}">
+    </div>
+    <div>
+      <label for="date_to">To</label>
+      <input type="date" id="date_to" name="date_to" value="{{ report.date_to }}">
+    </div>
+    <button class="btn btn-primary" type="submit">Run report</button>
+    <a class="btn btn-outline" href="/reports/export.csv?date_from={{ report.date_from }}&date_to={{ report.date_to }}">⬇ Download CSV</a>
+  </form>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="num">{{ report.order_count }}</div><div class="label">Orders delivered</div></div>
+  <div class="kpi"><div class="num">£{{ "%.2f"|format(report.subtotal) }}</div><div class="label">Sales (excl. tax)</div></div>
+  <div class="kpi"><div class="num">£{{ "%.2f"|format(report.tax_total) }}</div><div class="label">Tax</div></div>
+  <div class="kpi"><div class="num">£{{ "%.2f"|format(report.total) }}</div><div class="label">Total (inc. tax)</div></div>
+</div>
+
+<div class="card">
+  <h2>{{ report.date_from }} to {{ report.date_to }}</h2>
+  {% if report.orders %}
+  <table>
+    <tr><th>Order</th><th>Date</th><th>Customer</th><th>Project</th><th class="right">Subtotal</th><th class="right">Tax</th><th class="right">Total</th></tr>
+    {% for o in report.orders %}
+    <tr>
+      <td>{{ o.order_number }}</td>
+      <td>{{ o.requested_date }}</td>
+      <td>{{ o.customer.display_name }}</td>
+      <td>{{ o.project }}</td>
+      <td class="right">£{{ "%.2f"|format(o.subtotal) }}</td>
+      <td class="right">£{{ "%.2f"|format(o.tax_total) }}</td>
+      <td class="right">£{{ "%.2f"|format(o.total) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No completed orders in this date range.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

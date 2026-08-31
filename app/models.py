@@ -273,7 +273,8 @@ class Delivery(Base):
     order_id = Column(Integer, ForeignKey("orders.order_id"), nullable=False)
     driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=True)
     driver_name = Column(String, nullable=False, default="")
-    vehicle = Column(String, nullable=False, default="")
+    vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
+    vehicle = Column(String, nullable=False, default="")  # kept as a display fallback for legacy free-text entries
     scheduled_date = Column(Date, nullable=True)
     status = Column(String, nullable=False, default="Scheduled")
     access_token = Column(String, nullable=False, unique=True)  # driver's link, no login needed
@@ -287,6 +288,7 @@ class Delivery(Base):
 
     order = relationship("Order", back_populates="deliveries")
     driver_user = relationship("AppUser")
+    vehicle_ref = relationship("Vehicle")
     pings = relationship("LocationPing", cascade="all, delete-orphan", backref="delivery")
 
     __table_args__ = (
@@ -321,3 +323,42 @@ class XeroConnection(Base):
     connected_by = Column(String, nullable=False, default="")
     connected_at = Column(DateTime, nullable=False, server_default=func.now())
     last_customer_sync_at = Column(DateTime, nullable=True)
+
+
+class Vehicle(Base):
+    """The yard's own fleet — picked from a dropdown when scheduling a
+    delivery, instead of a driver typing a plate in by hand each time."""
+    __tablename__ = "vehicles"
+
+    vehicle_id = Column(Integer, primary_key=True)
+    registration = Column(String, nullable=False, unique=True)  # number plate
+    description = Column(String, nullable=False, default="")  # e.g. "8-wheel mixer"
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class VehicleCheck(Base):
+    """A driver's daily walkaround check — modelled on the standard DVSA
+    HGV walkaround checklist (the same structure apps like Predrive
+    digitize). One per driver, per vehicle, per day."""
+    __tablename__ = "vehicle_checks"
+
+    check_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=False)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=False)
+    check_date = Column(Date, nullable=False)
+    # {"item_key": "pass" | "defect", ...} — kept as JSON text rather than a
+    # column per item so the checklist itself can grow without a migration.
+    items_json = Column(String, nullable=False, default="{}")
+    has_defects = Column(Boolean, nullable=False, default=False)
+    defect_notes = Column(String, nullable=False, default="")
+    signed_by = Column(String, nullable=False, default="")
+    signature_path = Column(String, nullable=False, default="")
+    submitted_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    driver = relationship("AppUser")
+    vehicle = relationship("Vehicle")
+
+    __table_args__ = (
+        UniqueConstraint("driver_user_id", "vehicle_id", "check_date", name="uq_check_driver_vehicle_date"),
+    )

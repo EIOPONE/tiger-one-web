@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Vehicle Checks — Tiger One{% endblock %}
+{% block page_title %}Vehicle checks{% endblock %}
+{% block page_subtitle %}Daily walkaround checks submitted by drivers, most recent first.{% endblock %}
+{% block content %}
+
+<div class="card">
+  {% if checks %}
+  <table>
+    <tr><th>Date</th><th>Driver</th><th>Vehicle</th><th>Result</th><th>Notes</th></tr>
+    {% for c in checks %}
+    <tr>
+      <td>{{ c.check_date }}</td>
+      <td>{{ c.driver.full_name }}</td>
+      <td>{{ c.vehicle.registration }}</td>
+      <td>
+        {% if c.has_defects %}
+          <span class="pill pill-lost">⚠ Defects found</span>
+        {% else %}
+          <span class="pill pill-completed">✓ All clear</span>
+        {% endif %}
+      </td>
+      <td class="muted" style="font-size:13px;">{{ c.defect_notes or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No vehicle checks submitted yet.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

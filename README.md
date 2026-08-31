@@ -54,30 +54,75 @@ removes the reservation.
 
 ## Xero
 
+One-way only — Tiger One is the source of truth for the business; Xero is
+kept updated automatically purely for reconciliation on the accounts side.
+Nothing flows back the other way.
+
 - Office staff connect it at **/xero** — a "Connect to Xero" button starts
   the standard OAuth flow, then shows which organisation is connected.
 - **New customers** get pushed to Xero as Contacts automatically the
   moment they're saved (matched by name first, so connecting to a Xero
   org that already has these customers doesn't create duplicates).
-- **Completed orders** get pushed as an Authorised invoice automatically
-  the moment their status becomes `Completed` — idempotent, so re-saving
-  Completed never creates a second invoice.
-- **Contacts changed in Xero** come back the other way via the "Sync
-  customers from Xero now" button on the /xero page — this is a manual
-  pull rather than a live two-way sync, since real-time would need a
-  publicly-verifiable webhook endpoint, which is a further step up in
-  infrastructure from what's here now.
+- **Completed orders** (i.e. actually delivered) get pushed as an
+  Authorised invoice automatically the moment their status becomes
+  `Completed` — idempotent, so re-saving Completed never creates a
+  second invoice.
 - A Xero outage or misconfiguration never blocks office work — saving a
   customer or completing an order always succeeds even if the Xero push
-  fails; it just doesn't get an invoice number until the next attempt
-  (currently: the next time that order is saved as Completed again, since
-  the push is retried whenever `xero_invoice_id` is still empty).
+  fails. If a push does fail, a "Retry sync" button appears next to that
+  order on the Orders page so the office can see it and retry manually.
 
 Three environment variables needed on Render for this to work:
 `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET` (from the app you create at
 developer.xero.com), and `XERO_REDIRECT_URI` (must be exactly
 `https://<your-render-url>/xero/callback`, entered letter-for-letter in
 the Xero app's settings too).
+
+## Sales reports
+
+**/reports** — pick any date range (defaults to the last 7 days) and see
+completed (delivered) orders in that window: order count, subtotal, tax,
+and total, plus the full list. "Download CSV" exports the same data —
+opens straight in Excel. Built as a flexible date range rather than a
+fixed "weekly" report so it covers weekly, monthly, or any custom period
+without needing separate buttons for each.
+
+## Fleet, reassignment, and completion notifications
+
+- **Vehicles** (`/vehicles`) — the fleet, added once. Scheduling and
+  reassigning a delivery now picks from a dropdown instead of a driver
+  typing a plate in by hand.
+- **Removing a driver** (`/drivers`) is a soft-delete — it blocks their
+  login and drops them off the active list, but keeps their delivery and
+  vehicle-check history intact rather than deleting it.
+- **Reassigning a job** — any delivery that isn't yet Delivered has a
+  "Reassign" control on the Orders page to change driver and/or vehicle
+  (wrong driver assigned, a truck's broken down, etc). Blocked once a
+  delivery's already signed off, since that history shouldn't change
+  retroactively.
+- **Completion notifications** — a dismissible toast (bottom-right) on
+  every office page, polling every 20 seconds for newly-signed PODs.
+  Auto-clears after 15s if not dismissed. Worth knowing: it only catches
+  drops signed off while an office page is already open — it doesn't
+  currently remember what happened while nobody had a page open, so
+  there's no catch-up notification after being away. Fine for a first
+  version; a "since I was last here" version is a natural next step if
+  that matters in practice.
+
+## Daily vehicle checks
+
+- **/driver/vehicle-check** — the driver's daily walkaround check, built
+  from the official DVSA HGV walkaround checklist (the same standard
+  Predrive and similar apps are built around) — grouped into Inside the
+  cab / Outside the vehicle / Concrete equipment (mixer drum, water tank,
+  load security), each item a Pass/Defect toggle, defect notes, and a
+  signature. One per driver, per vehicle, per day.
+- The driver dashboard shows a prominent reminder banner until today's
+  check is done — it's a visible nudge, not a hard block on viewing jobs,
+  since trapping a driver from seeing their work over a paperwork step
+  felt like the wrong trade-off for a first version.
+- Office sees everything submitted at **/vehicle-checks**, with any
+  check that has a defect clearly flagged alongside the driver's notes.
 
 ## Driver logins, tracking and signed PODs
 
