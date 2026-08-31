@@ -82,9 +82,8 @@
 
     function renderDots() {
       dotsEl.innerHTML = '';
-      const len = Math.max(pin.length, 4);
-      for (let i = 0; i < Math.max(pin.length + 1, 4); i++) {
-        if (i >= 6) break;
+      const totalDots = Math.max(pin.length, 4);
+      for (let i = 0; i < totalDots; i++) {
         const d = document.createElement('div');
         d.className = 'dot' + (i < pin.length ? ' filled' : '');
         dotsEl.appendChild(d);
@@ -106,25 +105,38 @@
       stepPin.style.display = 'none';
       stepName.style.display = 'block';
       pin = '';
+      if (submitTimer) clearTimeout(submitTimer);
     });
+
+    let submitTimer = null;
+    function scheduleAutoSubmit() {
+      if (submitTimer) clearTimeout(submitTimer);
+      // Waits for a pause in typing rather than assuming every PIN is 4
+      // digits — this is what lets 5- and 6-digit PINs finish typing
+      // instead of submitting early on the 5th digit.
+      submitTimer = setTimeout(() => submit(), 500);
+    }
 
     document.querySelectorAll('.key[data-k]').forEach(key => {
       key.addEventListener('click', () => {
         if (pin.length >= MAX_PIN) return;
         pin += key.dataset.k;
         renderDots();
-        if (pin.length >= 4) {
-          // auto-submit once a plausible PIN length is reached, after a short pause
-          if (pin.length === 4) {
-            setTimeout(() => { if (pin.length === 4) submit(); }, 350);
-          } else {
-            submit();
-          }
+        if (pin.length >= MAX_PIN) {
+          submit();  // hit the max length — no need to wait for a pause
+        } else if (pin.length >= 4) {
+          scheduleAutoSubmit();
         }
       });
     });
-    document.getElementById('back-key').addEventListener('click', () => { pin = pin.slice(0, -1); renderDots(); });
-    document.getElementById('clear-key').addEventListener('click', () => { pin = ''; renderDots(); });
+    document.getElementById('back-key').addEventListener('click', () => {
+      pin = pin.slice(0, -1); renderDots();
+      if (submitTimer) clearTimeout(submitTimer);
+    });
+    document.getElementById('clear-key').addEventListener('click', () => {
+      pin = ''; renderDots();
+      if (submitTimer) clearTimeout(submitTimer);
+    });
 
     function submit() {
       document.getElementById('f-username').value = username;

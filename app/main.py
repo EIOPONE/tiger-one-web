@@ -261,6 +261,18 @@ def dashboard_page(request: Request, db: Session = Depends(db_dependency)):
     })
 
 
+@app.get("/api/dashboard/live")
+def dashboard_live(request: Request, db: Session = Depends(db_dependency)):
+    """Polled by the dashboard page so today's jobs and the KPI counts stay
+    current without a manual refresh — e.g. the moment a driver signs off
+    a delivery, its status updates here on its own."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    today = datetime.now().strftime("%Y-%m-%d")
+    return {"summary": crud.database_summary(db), "jobs_today": crud.todays_jobs(db, today)}
+
+
 @app.get("/customers", response_class=HTMLResponse)
 def customers_page(request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)

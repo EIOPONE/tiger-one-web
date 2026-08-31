@@ -8,19 +8,21 @@
 {% endblock %}
 {% block content %}
 <div class="kpis">
-  <div class="kpi"><div class="num">{{ jobs_today|length }}</div><div class="label">Jobs today</div></div>
-  <div class="kpi"><div class="num">{{ summary.open_quotes }}</div><div class="label">Open quotes</div></div>
-  <div class="kpi"><div class="num">{{ summary.open_orders }}</div><div class="label">Open orders</div></div>
-  <div class="kpi"><div class="num" style="color:{{ '#B42318' if summary.low_stock else '#17191C' }};">{{ summary.low_stock }}</div><div class="label">Materials at/under reorder</div></div>
+  <div class="kpi"><div class="num" id="kpi-jobs-today">{{ jobs_today|length }}</div><div class="label">Jobs today</div></div>
+  <div class="kpi"><div class="num" id="kpi-open-quotes">{{ summary.open_quotes }}</div><div class="label">Open quotes</div></div>
+  <div class="kpi"><div class="num" id="kpi-open-orders">{{ summary.open_orders }}</div><div class="label">Open orders</div></div>
+  <div class="kpi"><div class="num" id="kpi-low-stock" style="color:{{ '#B42318' if summary.low_stock else '#17191C' }};">{{ summary.low_stock }}</div><div class="label">Materials at/under reorder</div></div>
 </div>
 
 <div class="card">
   <h2>Today's jobs — {{ today_label }}</h2>
+  <div id="jobs-today-wrap">
   {% if jobs_today %}
   <div>
     <div class="job-row" style="border-bottom:2px solid var(--line);color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;">
       <div>Order</div><div>Customer / site</div><div>Product</div><div>Driver / vehicle</div><div>Status</div>
     </div>
+    <div id="jobs-today-rows">
     {% for j in jobs_today %}
     <div class="job-row">
       <div class="time">{{ j.order_number }}</div>
@@ -39,10 +41,12 @@
       <div><span class="pill pill-{{ j.status|lower|replace(' ', '-') }}">{{ j.status }}</span></div>
     </div>
     {% endfor %}
+    </div>
   </div>
   {% else %}
   <div class="empty">No jobs scheduled for today.</div>
   {% endif %}
+  </div>
 </div>
 
 <div class="card">
@@ -54,4 +58,44 @@
     <a class="btn btn-outline" href="/customers">Customers</a>
   </div>
 </div>
+
+<script>
+  function pillClass(status) { return 'pill pill-' + status.toLowerCase().replace(/ /g, '-'); }
+  function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function renderJobsToday(jobs) {
+    const wrap = document.getElementById('jobs-today-wrap');
+    if (!jobs.length) {
+      wrap.innerHTML = '<div class="empty">No jobs scheduled for today.</div>';
+      return;
+    }
+    const header = `<div class="job-row" style="border-bottom:2px solid var(--line);color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;">
+      <div>Order</div><div>Customer / site</div><div>Product</div><div>Driver / vehicle</div><div>Status</div></div>`;
+    const rows = jobs.map(j => `
+      <div class="job-row">
+        <div class="time">${escapeHtml(j.order_number)}</div>
+        <div><div>${escapeHtml(j.customer_name)}</div><div class="muted" style="font-size:12px;">${escapeHtml(j.site_address)}</div></div>
+        <div>${escapeHtml(j.summary)}</div>
+        <div>${j.driver_name ? `<span class="driver-chip">${escapeHtml(j.driver_name)} · ${escapeHtml(j.vehicle)}</span>` : '<span class="driver-chip unassigned">Unassigned</span>'}</div>
+        <div><span class="${pillClass(j.status)}">${escapeHtml(j.status)}</span></div>
+      </div>`).join('');
+    wrap.innerHTML = `<div>${header}<div id="jobs-today-rows">${rows}</div></div>`;
+  }
+
+  async function refreshDashboard() {
+    try {
+      const res = await fetch('/api/dashboard/live');
+      if (!res.ok) return;
+      const data = await res.json();
+      document.getElementById('kpi-jobs-today').textContent = data.jobs_today.length;
+      document.getElementById('kpi-open-quotes').textContent = data.summary.open_quotes;
+      document.getElementById('kpi-open-orders').textContent = data.summary.open_orders;
+      const lowStockEl = document.getElementById('kpi-low-stock');
+      lowStockEl.textContent = data.summary.low_stock;
+      lowStockEl.style.color = data.summary.low_stock ? '#B42318' : '#17191C';
+      renderJobsToday(data.jobs_today);
+    } catch (e) { /* quietly retry next cycle */ }
+  }
+  setInterval(refreshDashboard, 15000);
+</script>
 {% endblock %}
