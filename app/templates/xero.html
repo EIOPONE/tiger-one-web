@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Xero — Tiger One{% endblock %}
+{% block page_title %}Xero{% endblock %}
+{% block page_subtitle %}Completed orders are sent to Xero as invoices automatically. Customers sync both ways.{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('error') %}
+<div class="card" style="border-color:#F3C6BE;background:#FBE8E5;color:#B42318;">
+  Something went wrong: {{ request.query_params.get('error') }}
+</div>
+{% endif %}
+{% if request.query_params.get('synced') %}
+<div class="card" style="border-color:#BEE3CE;background:#E7F3ED;color:#247A52;">
+  Synced {{ request.query_params.get('synced') }} customer(s) from Xero.
+</div>
+{% endif %}
+
+{% if not configured %}
+<div class="card">
+  <h2>Not set up yet</h2>
+  <p class="muted">The office hasn't added Xero credentials to this deployment yet. Once <code>XERO_CLIENT_ID</code>, <code>XERO_CLIENT_SECRET</code> and <code>XERO_REDIRECT_URI</code> are set as environment variables, the Connect button below will work.</p>
+</div>
+{% elif connection %}
+<div class="card">
+  <h2>Connected</h2>
+  <p class="muted" style="font-size:15px;">Connected to <strong>{{ connection.tenant_name }}</strong> by {{ connection.connected_by }}.</p>
+  <div class="row-actions" style="margin-top:14px;">
+    <form method="post" action="/xero/sync-now"><button class="btn btn-outline" type="submit">Sync customers from Xero now</button></form>
+    <form method="post" action="/xero/disconnect"><button class="btn btn-outline" type="submit" style="color:#B42318;">Disconnect</button></form>
+  </div>
+  {% if connection.last_customer_sync_at %}
+  <p class="muted" style="font-size:13px;margin-top:10px;">Last synced: {{ connection.last_customer_sync_at.strftime('%d %B %Y, %H:%M') }}</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>How it works</h2>
+  <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:14px;line-height:1.7;">
+    <li>New customers are pushed to Xero as Contacts automatically when added in Tiger One.</li>
+    <li>Orders are sent to Xero as an Authorised invoice the moment their status is set to <strong>Completed</strong>.</li>
+    <li>Contacts changed in Xero come back the other way when you click "Sync customers from Xero now" above.</li>
+  </ul>
+</div>
+{% else %}
+<div class="card">
+  <h2>Not connected</h2>
+  <p class="muted">Connect Tiger One to your Xero organisation to start syncing customers and invoicing completed orders automatically.</p>
+  <a class="btn btn-primary" href="/xero/connect" style="margin-top:10px;">Connect to Xero</a>
+</div>
+{% endif %}
+
+{% endblock %}

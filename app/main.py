@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import crud, models
-from . import pdf_engine, quote_document, pod_pdf
+from . import pdf_engine, quote_document, pod_pdf, xero_client
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -26,6 +26,9 @@ PDF_DIR.mkdir(parents=True, exist_ok=True)
 LOGO_PATH = BASE_DIR / "branding" / "tiger_concrete_logo.jpg"
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 signer = URLSafeSerializer(SECRET_KEY, salt="tiger-one-session")
+XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID", "")
+XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET", "")
+XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI", "http://127.0.0.1:8000/xero/callback")
 
 app = FastAPI(title="Tiger One")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -469,6 +472,20 @@ def orders_status(request: Request, order_id: int, status: str = Form(...), db: 
     return RedirectResponse("/orders", status_code=303)
 
 
+@app.post("/orders/{order_id}/xero-retry")
+def orders_xero_retry(request: Request, order_id: int, db: Session = Depends(db_dependency)):
+    """Visible retry for when the automatic push to Xero failed (outage,
+    Xero temporarily unreachable, etc) — sync_order_to_xero is a no-op if
+    it's already succeeded, so this is always safe to click."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    order = db.get(models.Order, order_id)
+    if order:
+        crud.sync_order_to_xero(db, order, crud.XERO_CLIENT_ID, crud.XERO_CLIENT_SECRET)
+    return RedirectResponse("/orders", status_code=303)
+
+
 @app.post("/orders/{order_id}/allocate")
 def orders_allocate(request: Request, order_id: int, allocate: str = Form(...), db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
@@ -536,7 +553,75 @@ def drivers_new(
     return RedirectResponse("/drivers", status_code=303)
 
 
-# --- driver login (PIN) + driver dashboard --------------------------------------------------
+# --- Xero ------------------------------------------------------------------------------
+
+@app.get("/xero", response_class=HTMLResponse)
+def xero_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "xero.html", {
+        "user": user, "active": "xero", "connection": crud.get_xero_connection(db),
+        "configured": bool(XERO_CLIENT_ID and XERO_CLIENT_SECRET),
+    })
+
+
+@app.get("/xero/connect")
+def xero_connect(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    if not (XERO_CLIENT_ID and XERO_CLIENT_SECRET):
+        raise HTTPException(status_code=400, detail="XERO_CLIENT_ID / XERO_CLIENT_SECRET aren't set yet")
+    state = signer.dumps({"user_id": user.user_id})
+    url = xero_client.build_authorize_url(XERO_CLIENT_ID, XERO_REDIRECT_URI, state)
+    return RedirectResponse(url, status_code=303)
+
+
+@app.get("/xero/callback")
+def xero_callback(request: Request, code: str = "", state: str = "", error: str = "",
+                   db: Session = Depends(db_dependency)):
+    if error:
+        return RedirectResponse(f"/xero?error={error}", status_code=303)
+    try:
+        data = signer.loads(state)
+    except BadSignature:
+        raise HTTPException(status_code=400, detail="Invalid state — please try connecting again")
+    user = db.get(models.AppUser, data.get("user_id"))
+    if not user:
+        raise HTTPException(status_code=401, detail="Not signed in")
+
+    tokens = xero_client.exchange_code_for_tokens(XERO_CLIENT_ID, XERO_CLIENT_SECRET, code, XERO_REDIRECT_URI)
+    tenants = xero_client.get_connected_tenants(tokens["access_token"])
+    tenant = tenants[0] if tenants else {"tenantId": "", "tenantName": ""}
+    crud.save_xero_connection(
+        db, tenant["tenantId"], tenant.get("tenantName", ""),
+        xero_client.tokens_to_row_fields(tokens), user.full_name,
+    )
+    return RedirectResponse("/xero", status_code=303)
+
+
+@app.post("/xero/disconnect")
+def xero_disconnect(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.disconnect_xero(db)
+    return RedirectResponse("/xero", status_code=303)
+
+
+@app.post("/xero/sync-now")
+def xero_sync_now(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        count = crud.pull_customers_from_xero(db, XERO_CLIENT_ID, XERO_CLIENT_SECRET)
+        return RedirectResponse(f"/xero?synced={count}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/xero?error={exc}", status_code=303)
+
+
 
 @app.get("/driver/login", response_class=HTMLResponse)
 def driver_login_page(request: Request, db: Session = Depends(db_dependency)):

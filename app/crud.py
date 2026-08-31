@@ -6,14 +6,19 @@ tests/test_business_rules.py) carry over unchanged.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+import os
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import models
+from . import xero_client
 from .security import hash_password, verify_password, new_access_token
+
+XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID", "")
+XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET", "")
 
 TWOPLACES = Decimal("0.01")
 QUOTE_STATUSES = ("Draft", "Issued", "Accepted", "Lost", "Cancelled")
@@ -84,6 +89,7 @@ def next_order_number(db: Session) -> str:
 # --- customers / materials / products -------------------------------------------
 
 def save_customer(db: Session, values: dict, customer_id: int | None = None) -> models.Customer:
+    is_new = customer_id is None
     if customer_id:
         customer = db.get(models.Customer, customer_id)
         for key, value in values.items():
@@ -92,6 +98,8 @@ def save_customer(db: Session, values: dict, customer_id: int | None = None) -> 
         customer = models.Customer(**values)
         db.add(customer)
     db.flush()
+    if is_new:
+        sync_customer_to_xero(db, customer, XERO_CLIENT_ID, XERO_CLIENT_SECRET)
     return customer
 
 
@@ -390,6 +398,8 @@ def set_order_status(db: Session, order_id: int, status: str) -> models.Order:
     order.status = status
     db.flush()
     _rebuild_order_reservations(db, order)
+    if status == "Completed":
+        sync_order_to_xero(db, order, XERO_CLIENT_ID, XERO_CLIENT_SECRET)
     return order
 
 
@@ -591,3 +601,124 @@ def record_pod(
     delivery.status = "Delivered"
     db.flush()
     return delivery
+
+
+# --- Xero -----------------------------------------------------------------------------
+
+def get_xero_connection(db: Session) -> models.XeroConnection | None:
+    return db.scalar(select(models.XeroConnection).order_by(models.XeroConnection.id.desc()).limit(1))
+
+
+def save_xero_connection(db: Session, tenant_id: str, tenant_name: str, tokens: dict, connected_by: str) -> models.XeroConnection:
+    """Single-tenant app — one Xero organisation connected at a time, so a
+    fresh connect replaces whatever was there before."""
+    existing = get_xero_connection(db)
+    if existing:
+        db.delete(existing)
+        db.flush()
+    connection = models.XeroConnection(
+        tenant_id=tenant_id, tenant_name=tenant_name, connected_by=connected_by,
+        access_token=tokens["access_token"], refresh_token=tokens["refresh_token"],
+        expires_at=tokens["expires_at"],
+    )
+    db.add(connection)
+    db.flush()
+    return connection
+
+
+def update_xero_tokens(db: Session, connection: models.XeroConnection, tokens: dict) -> None:
+    connection.access_token = tokens["access_token"]
+    connection.refresh_token = tokens["refresh_token"]
+    connection.expires_at = tokens["expires_at"]
+    db.flush()
+
+
+def disconnect_xero(db: Session) -> None:
+    existing = get_xero_connection(db)
+    if existing:
+        db.delete(existing)
+        db.flush()
+
+
+def ensure_valid_xero_token(db: Session, client_id: str, client_secret: str) -> models.XeroConnection | None:
+    """A connection with a guaranteed-fresh access token, refreshing first
+    if it's expired (or close to it). Returns None if not connected at all."""
+    connection = get_xero_connection(db)
+    if not connection:
+        return None
+    if xero_client.is_expired(connection.expires_at):
+        tokens = xero_client.refresh_tokens(client_id, client_secret, connection.refresh_token)
+        update_xero_tokens(db, connection, xero_client.tokens_to_row_fields(tokens))
+    return connection
+
+
+def sync_customer_to_xero(db: Session, customer: models.Customer, client_id: str, client_secret: str) -> None:
+    """Best-effort, deliberately swallows errors — a Xero hiccup (or Xero
+    simply not being connected) must never stop the office from saving a
+    customer. Called right after a customer is created."""
+    try:
+        connection = ensure_valid_xero_token(db, client_id, client_secret)
+        if not connection:
+            return
+        contact_id = xero_client.find_or_create_contact(connection.access_token, connection.tenant_id, customer)
+        customer.xero_contact_id = contact_id
+        customer.xero_synced_at = datetime.now(timezone.utc)
+        db.flush()
+    except Exception:
+        pass
+
+
+def sync_order_to_xero(db: Session, order: models.Order, client_id: str, client_secret: str) -> None:
+    """Called when an order becomes Completed. Idempotent (skips if this
+    order already has a Xero invoice) and, like the customer push, never
+    raises — a failed Xero push doesn't undo marking the order Completed."""
+    if order.xero_invoice_id:
+        return
+    try:
+        connection = ensure_valid_xero_token(db, client_id, client_secret)
+        if not connection:
+            return
+        customer = order.customer
+        if not customer.xero_contact_id:
+            customer.xero_contact_id = xero_client.find_or_create_contact(
+                connection.access_token, connection.tenant_id, customer,
+            )
+            customer.xero_synced_at = datetime.now(timezone.utc)
+        invoice_id, invoice_number = xero_client.create_invoice(
+            connection.access_token, connection.tenant_id, order, customer.xero_contact_id,
+        )
+        order.xero_invoice_id = invoice_id
+        order.xero_invoice_number = invoice_number
+        order.xero_synced_at = datetime.now(timezone.utc)
+        db.flush()
+    except Exception:
+        pass
+
+
+def pull_customers_from_xero(db: Session, client_id: str, client_secret: str) -> int:
+    """Manual pull, triggered by the office's 'Sync now' button — Xero
+    Contacts updated since the last sync get created or matched to existing
+    Tiger One customers by their stored xero_contact_id. Returns the count
+    touched. Raises if Xero isn't connected (unlike the best-effort push
+    functions, this one has a person waiting on the result)."""
+    connection = ensure_valid_xero_token(db, client_id, client_secret)
+    if not connection:
+        raise ValueError("Xero isn't connected")
+    since = connection.last_customer_sync_at or (datetime.now(timezone.utc) - timedelta(days=365))
+    contacts = xero_client.list_contacts_updated_since(connection.access_token, connection.tenant_id, since)
+    touched = 0
+    for contact in contacts:
+        existing = db.scalar(select(models.Customer).where(models.Customer.xero_contact_id == contact["ContactID"]))
+        values = {"display_name": contact.get("Name", "") or "(unnamed)", "email": contact.get("EmailAddress", "") or ""}
+        if existing:
+            for key, value in values.items():
+                setattr(existing, key, value)
+        else:
+            db.add(models.Customer(
+                customer_type="Commercial", contact_name="", xero_contact_id=contact["ContactID"],
+                xero_synced_at=datetime.now(timezone.utc), **values,
+            ))
+        touched += 1
+    connection.last_customer_sync_at = datetime.now(timezone.utc)
+    db.flush()
+    return touched

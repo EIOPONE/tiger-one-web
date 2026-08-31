@@ -43,7 +43,6 @@ removes the reservation.
 
 ## What's NOT in here yet
 
-- Xero connection.
 - A hard stop preventing `available` stock from going negative when
   something IS allocated — the allocate_stock flag above is a manual
   failsafe for holding reservations back, not a check on whether enough
@@ -52,6 +51,33 @@ removes the reservation.
   stopgap that adds new columns to the live Postgres database automatically
   on startup — fine for the changes made so far (all nullable, additive),
   but worth replacing before schema changes get more involved.
+
+## Xero
+
+- Office staff connect it at **/xero** — a "Connect to Xero" button starts
+  the standard OAuth flow, then shows which organisation is connected.
+- **New customers** get pushed to Xero as Contacts automatically the
+  moment they're saved (matched by name first, so connecting to a Xero
+  org that already has these customers doesn't create duplicates).
+- **Completed orders** get pushed as an Authorised invoice automatically
+  the moment their status becomes `Completed` — idempotent, so re-saving
+  Completed never creates a second invoice.
+- **Contacts changed in Xero** come back the other way via the "Sync
+  customers from Xero now" button on the /xero page — this is a manual
+  pull rather than a live two-way sync, since real-time would need a
+  publicly-verifiable webhook endpoint, which is a further step up in
+  infrastructure from what's here now.
+- A Xero outage or misconfiguration never blocks office work — saving a
+  customer or completing an order always succeeds even if the Xero push
+  fails; it just doesn't get an invoice number until the next attempt
+  (currently: the next time that order is saved as Completed again, since
+  the push is retried whenever `xero_invoice_id` is still empty).
+
+Three environment variables needed on Render for this to work:
+`XERO_CLIENT_ID`, `XERO_CLIENT_SECRET` (from the app you create at
+developer.xero.com), and `XERO_REDIRECT_URI` (must be exactly
+`https://<your-render-url>/xero/callback`, entered letter-for-letter in
+the Xero app's settings too).
 
 ## Driver logins, tracking and signed PODs
 

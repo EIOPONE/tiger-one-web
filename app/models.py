@@ -50,6 +50,8 @@ class Customer(Base):
     payment_terms = Column(String, nullable=False, default="")
     notes = Column(String, nullable=False, default="")
     active = Column(Boolean, nullable=False, default=True)
+    xero_contact_id = Column(String, nullable=True)  # set once pushed to / matched in Xero
+    xero_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -200,6 +202,12 @@ class Order(Base):
     # Set automatically when this order was created by accepting a quote —
     # keeps the paper trail from quotation through to live job.
     source_quote_id = Column(Integer, ForeignKey("quotes.quote_id"), nullable=True)
+    # Set once this order has been pushed to Xero as an invoice (happens
+    # automatically when status becomes Completed) — also doubles as the
+    # idempotency check so it's never pushed twice.
+    xero_invoice_id = Column(String, nullable=True)
+    xero_invoice_number = Column(String, nullable=True)
+    xero_synced_at = Column(DateTime, nullable=True)
     created_by = Column(String, nullable=False, default="")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -297,3 +305,19 @@ class LocationPing(Base):
     latitude = Column(Numeric(9, 6), nullable=False)
     longitude = Column(Numeric(9, 6), nullable=False)
     recorded_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class XeroConnection(Base):
+    """One row — this is a single-tenant app (one Xero organisation connected
+    at a time), so there's no need for a customer/user link on this table."""
+    __tablename__ = "xero_connection"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    tenant_name = Column(String, nullable=False, default="")
+    access_token = Column(String, nullable=False)
+    refresh_token = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    connected_by = Column(String, nullable=False, default="")
+    connected_at = Column(DateTime, nullable=False, server_default=func.now())
+    last_customer_sync_at = Column(DateTime, nullable=True)

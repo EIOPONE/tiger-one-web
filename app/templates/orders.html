@@ -47,7 +47,7 @@
   <h2>All orders</h2>
   {% if orders %}
   <table>
-    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Delivery</th><th>Actions</th></tr>
+    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Xero</th><th>Delivery</th><th>Actions</th></tr>
     {% for o in orders %}
     <tr id="order-{{ o.order_id }}">
       <td>
@@ -65,6 +65,17 @@
             <button class="btn btn-small {{ 'btn-primary' if o.allocate_stock else 'btn-outline' }}" type="submit">
               {{ 'Allocated ✓' if o.allocate_stock else 'Not allocated' }}
             </button>
+          </form>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if o.xero_invoice_number %}
+          <span class="pill pill-completed">{{ o.xero_invoice_number }}</span>
+        {% elif o.status == 'Completed' %}
+          <form method="post" action="/orders/{{ o.order_id }}/xero-retry" class="toggle-form">
+            <button class="btn btn-small btn-outline" type="submit" title="Automatic push didn't complete — click to retry">Retry sync</button>
           </form>
         {% else %}
           <span class="muted">—</span>

@@ -38,6 +38,11 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 _LIGHT_MIGRATIONS = [
     "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS driver_user_id INTEGER REFERENCES app_users(user_id)",
     "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS scheduled_date DATE",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS xero_contact_id VARCHAR",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS xero_synced_at TIMESTAMP",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_id VARCHAR",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_number VARCHAR",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_synced_at TIMESTAMP",
 ]
 
 
