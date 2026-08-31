@@ -15,7 +15,8 @@
       <input type="date" id="date_to" name="date_to" value="{{ report.date_to }}">
     </div>
     <button class="btn btn-primary" type="submit">Run report</button>
-    <a class="btn btn-outline" href="/reports/export.csv?date_from={{ report.date_from }}&date_to={{ report.date_to }}">⬇ Download CSV</a>
+    <a class="btn btn-primary" href="/reports/export.pdf?date_from={{ report.date_from }}&date_to={{ report.date_to }}" target="_blank">⬇ Download PDF</a>
+    <a class="btn btn-outline" href="/reports/export.csv?date_from={{ report.date_from }}&date_to={{ report.date_to }}" style="font-size:12px;color:var(--muted);">CSV</a>
   </form>
 </div>
 

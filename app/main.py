@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import crud, models
-from . import pdf_engine, quote_document, pod_pdf, xero_client
+from . import pdf_engine, quote_document, pod_pdf, xero_client, report_pdf
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -684,6 +684,18 @@ def reports_export_csv(request: Request, date_from: str, date_to: str, db: Sessi
     filename = f"Sales_Report_{date_from}_to_{date_to}.csv"
     return Response(content=buf.getvalue(), media_type="text/csv",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/reports/export.pdf")
+def reports_export_pdf(request: Request, date_from: str, date_to: str, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    report = crud.sales_report(db, date_from, date_to)
+    pdf_bytes = report_pdf.generate_sales_report_pdf(report, LOGO_PATH)
+    filename = f"Sales_Report_{date_from}_to_{date_to}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 # --- Xero ------------------------------------------------------------------------------
