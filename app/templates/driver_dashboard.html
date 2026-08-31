@@ -26,6 +26,10 @@
     .btn-maps { background: #EEF0F1; color: var(--ink); }
     .btn-open { background: var(--orange); color: #fff; }
     .empty { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 15px; }
+    .tabbar { position: sticky; top: 0; z-index: 20; display: flex; background: #fff; border-bottom: 1px solid var(--line); }
+    .tabbar a, .tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; text-decoration: none; color: var(--muted); font-size: 11px; font-weight: 700; background: none; border: 0; margin: 0; }
+    .tabbar .icon { font-size: 19px; }
+    .tabbar a.active { color: var(--orange-dark); }
   </style>
 </head>
 <body>
@@ -33,6 +37,10 @@
     <div class="name">Hi, {{ user.full_name.split(' ')[0] }} <span>👋</span></div>
     <form method="post" action="/web-logout"><button type="submit">Log out</button></form>
   </header>
+  <nav class="tabbar">
+    <a href="/driver" class="active"><span class="icon">🏠</span>Home</a>
+    <a href="/driver/vehicle-check"><span class="icon">📋</span>Vehicle Check</a>
+  </nav>
   <main>
     {% if not checked_in_today %}
     <a href="/driver/vehicle-check" style="display:flex;align-items:center;gap:12px;background:#FFF0E7;border:1px solid #F3C6A6;border-radius:14px;padding:16px;margin-bottom:18px;text-decoration:none;color:var(--ink);">

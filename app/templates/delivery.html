@@ -27,6 +27,10 @@
     #confirm { display: none; text-align: center; padding: 30px 16px; }
     #confirm .tick { font-size: 44px; }
     #confirm a { display: block; margin-top: 18px; background: var(--ink); color: #fff; text-decoration: none; padding: 16px; border-radius: 12px; font-weight: 700; }
+    .tabbar { position: sticky; top: 0; z-index: 20; display: flex; background: #fff; border-bottom: 1px solid var(--line); }
+    .tabbar a, .tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; text-decoration: none; color: var(--muted); font-size: 11px; font-weight: 700; background: none; border: 0; margin: 0; }
+    .tabbar .icon { font-size: 19px; }
+    .tabbar a.active { color: var(--orange-dark); }
   </style>
 </head>
 <body>
@@ -34,6 +38,11 @@
     <h1>Order {{ order.order_number }}</h1>
     <p>{{ order.customer.display_name }} — {{ order.site_address }}</p>
   </header>
+  <nav class="tabbar">
+    <a href="/driver"><span class="icon">🏠</span>Home</a>
+    <a href="/driver/vehicle-check"><span class="icon">📋</span>Vehicle Check</a>
+    <form method="post" action="/web-logout"><button type="submit"><span class="icon">🔒</span>Log out</button></form>
+  </nav>
   <main>
     <div class="card">
       <h2>Delivery <span id="status-pill">{{ delivery.status }}</span></h2>
