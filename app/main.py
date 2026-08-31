@@ -229,8 +229,10 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 
 
 @app.post("/web-logout")
-def web_logout():
-    response = RedirectResponse("/login", status_code=303)
+def web_logout(request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    destination = "/driver/login" if (user and user.role == "Driver") else "/login"
+    response = RedirectResponse(destination, status_code=303)
     response.delete_cookie("session")
     return response
 

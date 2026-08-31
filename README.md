@@ -82,9 +82,14 @@ the Xero app's settings too).
 
 **/reports** — pick any date range (defaults to the last 7 days) and see
 completed (delivered) orders in that window: order count, subtotal, tax,
-and total, plus the full list. "Download CSV" exports the same data —
-opens straight in Excel. Built as a flexible date range rather than a
-fixed "weekly" report so it covers weekly, monthly, or any custom period
+and total, plus the full list. "Download PDF" is the main option — a
+proper branded report (KPI summary + itemised table + total), generated
+with `reportlab` so it works identically on Render as on the office PC,
+no Excel or any spreadsheet software needed to read it. A CSV export is
+still there as a small secondary link for anyone who does want the raw
+data, but PDF is the one built for actually handing someone a report.
+Built as a flexible date range rather than a fixed "weekly" report so it
+covers weekly, monthly, or any custom period
 without needing separate buttons for each.
 
 ## Fleet, reassignment, and completion notifications
