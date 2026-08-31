@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Quotes — Tiger One{% endblock %}
+{% block page_title %}Quotations{% endblock %}
+{% block page_subtitle %}Accepted quotes reserve materials from their recipe, unless allocation is switched off.{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>New quote</h2>
+  <form method="post" action="/quotes/new" id="quote-form">
+    <div class="grid-2">
+      <div>
+        <label for="customer_id">Customer</label>
+        <select id="customer_id" name="customer_id" required>
+          {% for c in customers %}<option value="{{ c.customer_id }}">{{ c.display_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label for="project">Project</label><input type="text" id="project" name="project"></div>
+    </div>
+    <div class="grid-2">
+      <div><label for="site_address">Site address</label><input type="text" id="site_address" name="site_address"></div>
+      <div><label for="requested_date">Requested date</label><input type="date" id="requested_date" name="requested_date"></div>
+    </div>
+
+    <label style="margin-top:16px;">Lines</label>
+    <div id="item-rows"></div>
+    <button type="button" class="btn btn-outline btn-small" id="add-row">+ Add line</button>
+
+    <div class="grid-2" style="margin-top:14px;">
+      <div><label for="tax_rate">Tax rate %</label><input type="number" step="0.01" id="tax_rate" name="tax_rate" value="20"></div>
+      <div>
+        <label for="status">Status</label>
+        <select id="status" name="status">
+          <option value="Draft">Draft</option>
+          <option value="Issued">Issued</option>
+          <option value="Accepted">Accepted</option>
+        </select>
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-direction:row;">
+      <input type="checkbox" name="allocate_stock" value="true" checked style="width:auto;">
+      Allocate stock immediately if Accepted
+    </label>
+
+    <button class="btn btn-primary" type="submit" style="margin-top:16px;">Save quote</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All quotes</h2>
+  {% if quotes %}
+  <table>
+    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Actions</th></tr>
+    {% for q in quotes %}
+    <tr>
+      <td>{{ q.quote_number }}</td>
+      <td>{{ q.customer.display_name }}</td>
+      <td>{{ q.project }}</td>
+      <td class="right">£{{ "%.2f"|format(q.total) }}</td>
+      <td><span class="pill pill-{{ q.status|lower|replace(' ', '-') }}">{{ q.status }}</span></td>
+      <td>
+        {% if q.converted_orders %}
+          <a class="btn btn-small btn-outline" href="/orders#order-{{ q.converted_orders[0].order_id }}">→ Order {{ q.converted_orders[0].order_number }}</a>
+        {% elif q.status == 'Accepted' %}
+          <form method="post" action="/quotes/{{ q.quote_id }}/allocate" class="toggle-form">
+            <input type="hidden" name="allocate" value="{{ 'false' if q.allocate_stock else 'true' }}">
+            <button class="btn btn-small {{ 'btn-primary' if q.allocate_stock else 'btn-outline' }}" type="submit">
+              {{ 'Allocated ✓' if q.allocate_stock else 'Not allocated' }}
+            </button>
+          </form>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td class="row-actions">
+        {% if not q.converted_orders %}
+          {% if q.status == 'Draft' %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Issued"><button class="btn btn-outline btn-small" type="submit">Issue</button></form>{% endif %}
+          {% if q.status in ['Draft', 'Issued'] %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Accepted"><button class="btn btn-outline btn-small" type="submit">Accept</button></form>{% endif %}
+          {% if q.status in ['Draft', 'Issued', 'Accepted'] %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Lost"><button class="btn btn-outline btn-small" type="submit">Lost</button></form>{% endif %}
+        {% endif %}
+        <a class="btn btn-outline btn-small" href="/quotes/{{ q.quote_id }}/pdf" target="_blank">PDF</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No quotes yet — create the first one above.</div>
+  {% endif %}
+</div>
+
+<script>
+  const products = {{ products_json|safe }};
+  const rowsEl = document.getElementById('item-rows');
+
+  function addRow() {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    const options = '<option value="">Custom line</option>' + products.map(p => `<option value="${p.product_id}" data-price="${p.default_unit_price}" data-desc="${p.name}" data-unit="${p.sell_unit}">${p.name}</option>`).join('');
+    row.innerHTML = `
+      <div><select name="product_id" class="product-select">${options}</select></div>
+      <div><input type="text" name="description" placeholder="description" required></div>
+      <div><input type="number" step="0.001" name="quantity" placeholder="qty" required></div>
+      <div><input type="text" name="unit" placeholder="unit" value="m³"></div>
+      <div style="display:flex;gap:6px;">
+        <input type="number" step="0.01" name="unit_price" placeholder="unit £" required>
+        <button type="button" class="btn btn-outline btn-small remove-row">✕</button>
+      </div>
+    `;
+    const select = row.querySelector('.product-select');
+    select.addEventListener('change', () => {
+      const opt = select.selectedOptions[0];
+      if (opt.value) {
+        row.querySelector('[name=description]').value = opt.dataset.desc;
+        row.querySelector('[name=unit_price]').value = opt.dataset.price;
+        row.querySelector('[name=unit]').value = opt.dataset.unit;
+      }
+    });
+    row.querySelector('.remove-row').onclick = () => row.remove();
+    rowsEl.appendChild(row);
+  }
+  document.getElementById('add-row').onclick = addRow;
+  addRow();
+</script>
+{% endblock %}

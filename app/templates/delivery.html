@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tiger Concrete — Delivery</title>
+  <style>
+    :root { --orange:#E3783E; --ink:#17191C; --line:#DFE2E4; --muted:#70757C; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #F4F5F5; color: var(--ink); }
+    header { background: var(--ink); color: #fff; padding: 16px 20px; }
+    header h1 { margin: 0; font-size: 18px; }
+    header p { margin: 4px 0 0; color: #cfd2d5; font-size: 13px; }
+    main { padding: 16px; max-width: 480px; margin: 0 auto; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { margin: 0 0 8px; font-size: 15px; }
+    .row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; color: var(--muted); }
+    .row span:last-child { color: var(--ink); font-weight: 600; }
+    #status-pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--orange); color: #fff; font-size: 12px; font-weight: 600; }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+    input[type=text] { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; }
+    canvas { width: 100%; height: 180px; border: 1px dashed var(--line); border-radius: 8px; touch-action: none; background: #fff; }
+    button { width: 100%; padding: 14px; border: 0; border-radius: 10px; background: var(--orange); color: #fff; font-size: 15px; font-weight: 700; margin-top: 12px; }
+    button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    input[type=file] { margin-top: 6px; }
+    #confirm { display: none; text-align: center; padding: 40px 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Order {{ order.order_number }}</h1>
+    <p>{{ order.customer.display_name }} — {{ order.site_address }}</p>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Delivery <span id="status-pill">{{ delivery.status }}</span></h2>
+      <div class="row"><span>Driver</span><span>{{ delivery.driver_name }}</span></div>
+      <div class="row"><span>Vehicle</span><span>{{ delivery.vehicle }}</span></div>
+      <div class="row"><span>Project</span><span>{{ order.project }}</span></div>
+    </div>
+
+    <form id="pod-form" class="card">
+      <h2>Confirm delivery (POD)</h2>
+      <label for="signed_by">Signed by (name)</label>
+      <input type="text" id="signed_by" name="signed_by" required placeholder="e.g. site foreman name">
+
+      <label>Signature</label>
+      <canvas id="pad" width="600" height="240"></canvas>
+      <button type="button" class="secondary" id="clear-pad">Clear signature</button>
+
+      <label for="photo">Photo of pour / site (optional)</label>
+      <input type="file" id="photo" name="photo" accept="image/*" capture="environment">
+
+      <button type="submit">Confirm & sign off</button>
+    </form>
+
+    <div id="confirm">
+      <h2>✅ Delivery confirmed</h2>
+      <p>Thanks — the office has been notified.</p>
+    </div>
+  </main>
+
+  <script>
+    const token = "{{ token }}";
+
+    // --- signature pad ---
+    const canvas = document.getElementById('pad');
+    const ctx = canvas.getContext('2d');
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#17191C';
+    let drawing = false;
+    function pos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      return { x: (t.clientX - rect.left) * (canvas.width / rect.width),
+               y: (t.clientY - rect.top) * (canvas.height / rect.height) };
+    }
+    function start(e) { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); }
+    function move(e) { if (!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }
+    function end() { drawing = false; }
+    canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move);
+    canvas.addEventListener('touchend', end);
+    document.getElementById('clear-pad').onclick = () => ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // --- GPS ping while this page is open (truck tracking MVP) ---
+    let lastPos = null;
+    function sendPing(lat, lon) {
+      const body = new URLSearchParams({ latitude: lat, longitude: lon });
+      fetch(`/api/deliveries/${token}/ping`, { method: 'POST', body });
+    }
+    if ('geolocation' in navigator) {
+      navigator.geolocation.watchPosition(
+        (p) => { lastPos = p.coords; sendPing(p.coords.latitude, p.coords.longitude); },
+        () => {}, { enableHighAccuracy: true, maximumAge: 15000 }
+      );
+    }
+
+    // --- POD submit ---
+    document.getElementById('pod-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const signedBy = document.getElementById('signed_by').value.trim();
+      if (!signedBy) return;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      const fd = new FormData();
+      fd.append('signed_by', signedBy);
+      if (lastPos) { fd.append('latitude', lastPos.latitude); fd.append('longitude', lastPos.longitude); }
+      fd.append('signature', blob, 'signature.png');
+      const photoInput = document.getElementById('photo');
+      if (photoInput.files[0]) fd.append('photo', photoInput.files[0]);
+
+      const res = await fetch(`/api/deliveries/${token}/pod`, { method: 'POST', body: fd });
+      if (res.ok) {
+        document.getElementById('pod-form').style.display = 'none';
+        document.getElementById('confirm').style.display = 'block';
+      } else {
+        alert('Something went wrong sending the sign-off — please try again.');
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: tiger-one-web
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements-render.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tiger-one-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.12.0
+
+databases:
+  - name: tiger-one-db
+    plan: free

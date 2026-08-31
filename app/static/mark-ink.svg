@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tiger One mark">
+  <g fill="none" stroke-width="50" stroke-linecap="round">
+    <path d="M256 76 A180 180 0 0 1 436 256" stroke="#F08A24"/>
+    <path d="M436 256 A180 180 0 0 1 256 436" stroke="#D96619"/>
+    <path d="M256 436 A180 180 0 0 1 76 256" stroke="#70757C"/>
+    <path d="M76 256 A180 180 0 0 1 256 76" stroke="#17191C"/>
+  </g>
+  <g stroke="#FFFFFF" stroke-width="10">
+    <circle cx="256" cy="76" r="28" fill="#F08A24"/>
+    <circle cx="436" cy="256" r="28" fill="#F08A24"/>
+    <circle cx="256" cy="436" r="28" fill="#17191C"/>
+    <circle cx="76" cy="256" r="28" fill="#70757C"/>
+  </g>
+</svg>

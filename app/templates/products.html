@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Products — Tiger One{% endblock %}
+{% block page_title %}Products &amp; Mixes{% endblock %}
+{% block page_subtitle %}Concrete products and their material recipes.{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Add a product</h2>
+  <form method="post" action="/products/new" id="product-form">
+    <div class="grid-3">
+      <div><label for="code">Code</label><input type="text" id="code" name="code" required placeholder="e.g. C30"></div>
+      <div><label for="name">Name</label><input type="text" id="name" name="name" required></div>
+      <div><label for="sell_unit">Sell unit</label><input type="text" id="sell_unit" name="sell_unit" value="m³"></div>
+    </div>
+    <label for="default_unit_price">Default unit price (£)</label>
+    <input type="number" step="0.0001" id="default_unit_price" name="default_unit_price" value="0" style="max-width:200px;">
+
+    <label style="margin-top:18px;">Recipe (materials consumed per unit)</label>
+    <div id="recipe-rows"></div>
+    <button type="button" class="btn btn-outline btn-small" id="add-row">+ Add material</button>
+
+    <button class="btn btn-primary" type="submit" style="margin-top:16px;display:block;">Add product</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All products</h2>
+  {% if products %}
+  <table>
+    <tr><th>Code</th><th>Name</th><th class="right">Price</th><th>Recipe</th></tr>
+    {% for p in products %}
+    <tr>
+      <td>{{ p.code }}</td>
+      <td>{{ p.name }}</td>
+      <td class="right">£{{ "%.2f"|format(p.default_unit_price) }} / {{ p.sell_unit }}</td>
+      <td class="muted">
+        {% for r in p.recipes %}{{ r.material.code }}: {{ r.quantity_per_unit }} {{ r.material.unit }} (+{{ r.waste_percent }}% waste){% if not loop.last %}, {% endif %}{% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No products yet — add the first one above.</div>
+  {% endif %}
+</div>
+
+<script>
+  const materials = {{ materials_json|safe }};
+  const rowsEl = document.getElementById('recipe-rows');
+
+  function addRow() {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.style.gridTemplateColumns = '2fr 1fr 1fr auto';
+    const options = materials.map(m => `<option value="${m.material_id}">${m.name} (${m.unit})</option>`).join('');
+    row.innerHTML = `
+      <div><select name="material_id">${options}</select></div>
+      <div><input type="number" step="0.0001" name="quantity_per_unit" placeholder="qty per unit" required></div>
+      <div><input type="number" step="0.01" name="waste_percent" placeholder="waste %" value="0"></div>
+      <div><button type="button" class="btn btn-outline btn-small remove-row">Remove</button></div>
+    `;
+    row.querySelector('.remove-row').onclick = () => row.remove();
+    rowsEl.appendChild(row);
+  }
+  document.getElementById('add-row').onclick = addRow;
+  if (materials.length) addRow();
+</script>
+{% endblock %}

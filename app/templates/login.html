@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Tiger One{% endblock %}
+{% block content %}
+<div style="max-width:360px;margin:60px auto 0;">
+  <div style="display:flex;justify-content:center;margin-bottom:14px;">
+    <img src="/static/mark-ink.svg" alt="Tiger One" style="width:56px;height:56px;">
+  </div>
+  <h1 style="text-align:center;">Tiger <span style="color:#E3783E;">One</span></h1>
+  <p class="subtitle" style="text-align:center;">Sign in to continue</p>
+  <div class="card">
+    {% if error %}<div class="flash" style="background:#FBE8E5;color:#B42318;">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required autofocus>
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required>
+      <button class="btn btn-primary" type="submit" style="width:100%;margin-top:18px;">Sign in</button>
+    </form>
+  </div>
+  <p style="text-align:center;color:#70757C;font-size:11px;margin-top:18px;">
+    <b style="color:#454a51;">Powered by ONE</b> · Built by EIOP Software
+  </p>
+</div>
+{% endblock %}

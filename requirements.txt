@@ -1,0 +1,16 @@
+fastapi==0.141.1
+uvicorn[standard]==0.30.6
+sqlalchemy==2.0.52
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.9
+itsdangerous==2.2.0
+jinja2==3.1.4
+pytest==8.3.2
+
+# psycopg2-binary is only needed once we're connecting to a real Postgres
+# database (production/hosting). It's left out of the default install
+# because on some Windows/Python version combos there's no prebuilt wheel
+# and it tries to compile from source, which fails without extra tools.
+# Install it separately later with:
+#   pip install psycopg2-binary

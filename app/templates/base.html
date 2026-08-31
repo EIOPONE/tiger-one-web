@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/static/mark-ink.svg">
+  <title>{% block title %}Tiger One{% endblock %}</title>
+  <style>
+    :root {
+      --orange:#E3783E; --orange-dark:#B65321; --ink:#17191C; --charcoal:#24272B;
+      --sidebar:#15171A; --sidebar-line:#2A2D31; --concrete:#EEF0F1; --muted:#70757C;
+      --line:#DFE2E4; --surface:#F4F5F5; --soft-orange:#FFF0E7; --green:#247A52; --red:#B42318;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--surface); color: var(--ink); }
+    .shell { display: flex; min-height: 100vh; }
+
+    /* --- Sidebar --- */
+    .sidebar { width: 226px; flex-shrink: 0; background: var(--sidebar); color: #fff; display: flex; flex-direction: column; }
+    .sidebar-brand { padding: 22px 20px 14px; display: flex; align-items: center; gap: 10px; }
+    .sidebar-brand img { width: 30px; height: 30px; flex-shrink: 0; }
+    .sidebar-brand .logo { font-size: 19px; font-weight: 800; color: #fff; line-height: 1; }
+    .sidebar-brand .logo span { color: var(--orange); }
+    .sidebar-brand .tag { color: #7d828a; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-top: 4px; }
+    .sidebar-section { padding: 18px 20px 6px; color: #63676e; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .sidebar nav { display: flex; flex-direction: column; padding: 0 10px; gap: 2px; }
+    .sidebar nav a { display: flex; align-items: center; gap: 10px; color: #c7cad0; text-decoration: none; font-size: 14px; font-weight: 600; padding: 10px 12px; border-radius: 8px; position: relative; }
+    .sidebar nav a .dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #63676e; flex-shrink: 0; }
+    .sidebar nav a:hover { background: #1E2124; color: #fff; }
+    .sidebar nav a.active { background: var(--orange); color: #fff; }
+    .sidebar nav a.active .dot { border-color: #fff; background: #fff; }
+    .sidebar nav a.disabled { color: #52565c; cursor: default; }
+    .sidebar nav a.disabled:hover { background: none; color: #52565c; }
+    .sidebar-spacer { flex: 1; }
+    .sidebar-user { border-top: 1px solid var(--sidebar-line); padding: 14px 20px; }
+    .sidebar-user .name { font-weight: 700; font-size: 14px; }
+    .sidebar-user .role { color: #7d828a; font-size: 12px; margin-top: 2px; }
+    .sidebar-user form { margin-top: 10px; }
+    .sidebar-user button { width: 100%; background: none; border: 1px solid var(--sidebar-line); color: #c7cad0; border-radius: 8px; padding: 7px; font-size: 12px; cursor: pointer; }
+    .sidebar-powered { padding: 12px 20px 18px; color: #52565c; font-size: 10.5px; line-height: 1.5; }
+    .sidebar-powered b { color: #7d828a; }
+
+    /* --- Main --- */
+    .main-wrap { flex: 1; min-width: 0; }
+    .topbar { background: #fff; border-bottom: 1px solid var(--line); padding: 18px 28px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .topbar h1 { margin: 0; font-size: 21px; }
+    .topbar .subtitle { color: var(--muted); font-size: 13px; margin: 3px 0 0; }
+    .topbar .actions { display: flex; gap: 8px; }
+    main { max-width: 1120px; padding: 24px 28px 60px; }
+
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .card h2 { margin: 0 0 14px; font-size: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .pill-draft { background: var(--concrete); color: var(--muted); }
+    .pill-issued, .pill-confirmed, .pill-scheduled { background: var(--soft-orange); color: var(--orange-dark); }
+    .pill-accepted, .pill-delivered, .pill-completed { background: #E7F3ED; color: var(--green); }
+    .pill-lost, .pill-cancelled { background: #FBE8E5; color: var(--red); }
+    .pill-en-route { background: var(--soft-orange); color: var(--orange-dark); }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; position: relative; overflow: hidden; }
+    .kpi::before { content: ""; position: absolute; top: 0; left: 16px; right: 16px; height: 3px; background: var(--orange); border-radius: 0 0 3px 3px; }
+    .kpi .num { font-size: 26px; font-weight: 800; }
+    .kpi .label { color: var(--muted); font-size: 12px; margin-top: 2px; text-transform: uppercase; letter-spacing: .02em; font-weight: 700; }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 5px; font-weight: 600; }
+    input, select, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 16px; }
+    button, .btn { border: 0; border-radius: 8px; padding: 9px 16px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-primary { background: var(--orange); color: #fff; }
+    .btn-primary:hover { background: var(--orange-dark); }
+    .btn-outline { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .btn-small { padding: 5px 10px; font-size: 12px; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .muted { color: var(--muted); }
+    .right { text-align: right; }
+    .item-row { display: grid; grid-template-columns: 2fr 1.4fr 0.8fr 0.8fr 1fr; gap: 8px; align-items: end; margin-bottom: 8px; }
+    .empty { color: var(--muted); padding: 24px 0; text-align: center; font-size: 14px; }
+    .toggle-form { display: inline; }
+    .job-row { display: grid; grid-template-columns: 90px 1.4fr 1fr 1fr 100px; gap: 12px; align-items: center; padding: 12px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .job-row:last-child { border-bottom: none; }
+    .job-row .time { font-weight: 700; color: var(--orange-dark); }
+    .driver-chip { background: var(--concrete); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+    .driver-chip.unassigned { background: #FBE8E5; color: var(--red); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+  {% if user %}
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="/static/mark-light.svg" alt="Tiger One">
+      <div>
+        <div class="logo">Tiger <span>One</span></div>
+        <div class="tag">Tiger Concrete Ltd</div>
+      </div>
+    </div>
+    <div class="sidebar-section">Workspace</div>
+    <nav>
+      <a href="/" class="{{ 'active' if active=='dashboard' }}"><span class="dot"></span>Home</a>
+      <a href="/quotes" class="{{ 'active' if active=='quotes' }}"><span class="dot"></span>Quotations</a>
+      <a href="/orders" class="{{ 'active' if active=='orders' }}"><span class="dot"></span>Orders</a>
+      <a href="/customers" class="{{ 'active' if active=='customers' }}"><span class="dot"></span>Customers</a>
+      <a href="/materials" class="{{ 'active' if active=='materials' }}"><span class="dot"></span>Materials</a>
+      <a href="/products" class="{{ 'active' if active=='products' }}"><span class="dot"></span>Products &amp; Mixes</a>
+    </nav>
+    <div class="sidebar-section">Coming next</div>
+    <nav>
+      <a class="disabled"><span class="dot"></span>Delivery Planning</a>
+      <a class="disabled"><span class="dot"></span>Sales Reporting</a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-user">
+      <div class="name">{{ user.full_name }}</div>
+      <div class="role">{{ user.role }}</div>
+      <form method="post" action="/web-logout"><button type="submit">Log out</button></form>
+    </div>
+    <div class="sidebar-powered"><b>Powered by ONE</b> · Built by EIOP Software</div>
+  </aside>
+  {% endif %}
+  <div class="main-wrap">
+    {% if user %}
+    <div class="topbar">
+      <div>
+        <h1>{% block page_title %}Tiger One{% endblock %}</h1>
+        <p class="subtitle">{% block page_subtitle %}{% endblock %}</p>
+      </div>
+      <div class="actions">{% block page_actions %}{% endblock %}</div>
+    </div>
+    {% endif %}
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  </div>
+</body>
+</html>

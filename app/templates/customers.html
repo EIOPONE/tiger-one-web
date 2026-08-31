@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Customers — Tiger One{% endblock %}
+{% block page_title %}Customers{% endblock %}
+{% block page_subtitle %}Commercial and private customers.{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Add a customer</h2>
+  <form method="post" action="/customers/new">
+    <div class="grid-2">
+      <div>
+        <label for="customer_type">Type</label>
+        <select id="customer_type" name="customer_type">
+          <option value="Commercial">Commercial</option>
+          <option value="Private">Private</option>
+        </select>
+      </div>
+      <div>
+        <label for="display_name">Name</label>
+        <input type="text" id="display_name" name="display_name" required>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <label for="contact_name">Contact name</label>
+        <input type="text" id="contact_name" name="contact_name">
+      </div>
+      <div>
+        <label for="mobile">Mobile</label>
+        <input type="text" id="mobile" name="mobile">
+      </div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <label for="email">Email</label>
+        <input type="text" id="email" name="email">
+      </div>
+      <div>
+        <label for="payment_terms">Payment terms</label>
+        <input type="text" id="payment_terms" name="payment_terms" placeholder="e.g. 30 days net">
+      </div>
+    </div>
+    <label for="address_1">Site / billing address</label>
+    <input type="text" id="address_1" name="address_1">
+    <button class="btn btn-primary" type="submit" style="margin-top:14px;">Add customer</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All customers</h2>
+  {% if customers %}
+  <table>
+    <tr><th>Name</th><th>Type</th><th>Contact</th><th>Mobile</th><th>Terms</th></tr>
+    {% for c in customers %}
+    <tr>
+      <td>{{ c.display_name }}</td>
+      <td>{{ c.customer_type }}</td>
+      <td>{{ c.contact_name }}</td>
+      <td>{{ c.mobile }}</td>
+      <td>{{ c.payment_terms }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No customers yet — add the first one above.</div>
+  {% endif %}
+</div>
+{% endblock %}
