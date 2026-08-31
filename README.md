@@ -43,16 +43,37 @@ removes the reservation.
 
 ## What's NOT in here yet
 
-- Office-facing web pages (customers/materials/quotes/orders are API
-  endpoints only right now — no HTML screens to click through yet).
-  That's the next piece: it replaces the Tkinter screens.
 - Xero connection.
 - A hard stop preventing `available` stock from going negative when
   something IS allocated — the allocate_stock flag above is a manual
   failsafe for holding reservations back, not a check on whether enough
   stock actually exists. Worth deciding on before this goes live.
-- Deployment config (Dockerfile / platform setup) — happy to add once
-  you've picked a host.
+- A proper migrations tool (Alembic). Right now `database.py` has a small
+  stopgap that adds new columns to the live Postgres database automatically
+  on startup — fine for the changes made so far (all nullable, additive),
+  but worth replacing before schema changes get more involved.
+
+## Driver logins, tracking and signed PODs
+
+Drivers get their own account, separate from office logins:
+
+- Office staff add drivers at **/drivers** — a name, a username, and a
+  short PIN (4–6 digits). No password to remember.
+- Drivers sign in at **/driver/login** — tap their name from a list, then
+  enter their PIN on a big on-screen keypad. No typing a username.
+- Once in, **/driver** shows just their own jobs as cards: project,
+  customer, status, a "📍 Navigate" button that opens the site address
+  directly in Google Maps, and an "Open job" button for the same POD page
+  as before (signature pad, photo capture, GPS ping while it's open).
+- Once a POD is signed, both the driver and the office can download it as
+  a PDF (`/d/{token}/pod.pdf` for the driver/customer copy, or the "POD
+  PDF" link next to the delivery on the Orders page for the office). This
+  PDF is generated with `reportlab` — pure Python, so unlike the quote/order
+  PDF button (which needs a local browser), this one works the same on
+  Render as it does on your PC.
+- Scheduling a delivery from the Orders page now picks a driver from a
+  dropdown (instead of typing a name) and a date, so it shows up
+  correctly on that driver's dashboard.
 
 ## Deploying to Render (GitHub)
 

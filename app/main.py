@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import crud, models
-from . import pdf_engine, quote_document
+from . import pdf_engine, quote_document, pod_pdf
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -220,7 +220,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
             "user": None, "error": "Incorrect username or password",
         }, status_code=401)
     token = signer.dumps({"user_id": user.user_id})
-    response = RedirectResponse("/", status_code=303)
+    response = RedirectResponse("/driver" if user.role == "Driver" else "/", status_code=303)
     response.set_cookie("session", token, httponly=True, samesite="lax")
     return response
 
@@ -232,11 +232,22 @@ def web_logout():
     return response
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard_page(request: Request, db: Session = Depends(db_dependency)):
+def require_office_user(request: Request, db: Session):
+    """Office pages: signed-in AND not a Driver account (drivers get their own
+    dashboard). Returns the user, or a RedirectResponse to send back instead."""
     user = get_user_or_none(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    if user.role == "Driver":
+        return RedirectResponse("/driver", status_code=303)
+    return user
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     today = datetime.now().strftime("%Y-%m-%d")
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user, "active": "dashboard", "summary": crud.database_summary(db),
@@ -247,9 +258,9 @@ def dashboard_page(request: Request, db: Session = Depends(db_dependency)):
 
 @app.get("/customers", response_class=HTMLResponse)
 def customers_page(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
     return templates.TemplateResponse(request, "customers.html", {
         "user": user, "active": "customers", "customers": customers,
@@ -262,9 +273,9 @@ def customers_new(
     contact_name: str = Form(""), mobile: str = Form(""), email: str = Form(""),
     payment_terms: str = Form(""), address_1: str = Form(""), db: Session = Depends(db_dependency),
 ):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.save_customer(db, {
         "customer_type": customer_type, "display_name": display_name, "contact_name": contact_name,
         "mobile": mobile, "email": email, "payment_terms": payment_terms, "address_1": address_1,
@@ -274,9 +285,9 @@ def customers_new(
 
 @app.get("/materials", response_class=HTMLResponse)
 def materials_page(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     return templates.TemplateResponse(request, "materials.html", {
         "user": user, "active": "materials", "materials": crud.material_balances(db),
     })
@@ -288,9 +299,9 @@ def materials_new(
     reorder_level: float = Form(0), reorder_quantity: float = Form(0), unit_cost: float = Form(0),
     supplier: str = Form(""), db: Session = Depends(db_dependency),
 ):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.save_material(db, {
         "code": code, "name": name, "unit": unit, "on_hand": 0, "reorder_level": reorder_level,
         "reorder_quantity": reorder_quantity, "unit_cost": unit_cost, "supplier": supplier,
@@ -300,18 +311,18 @@ def materials_new(
 
 @app.post("/materials/{material_id}/receive")
 def materials_receive(request: Request, material_id: int, quantity: float = Form(...), db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.receive_stock(db, material_id, quantity)
     return RedirectResponse("/materials", status_code=303)
 
 
 @app.get("/products", response_class=HTMLResponse)
 def products_page(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     products = db.query(models.Product).filter(models.Product.active.is_(True)).order_by(models.Product.name).all()
     return templates.TemplateResponse(request, "products.html", {
         "user": user, "active": "products", "products": products, "materials_json": materials_json(db),
@@ -320,9 +331,9 @@ def products_page(request: Request, db: Session = Depends(db_dependency)):
 
 @app.post("/products/new")
 async def products_new(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     form = await request.form()
     material_ids = form.getlist("material_id")
     quantities = form.getlist("quantity_per_unit")
@@ -341,9 +352,9 @@ async def products_new(request: Request, db: Session = Depends(db_dependency)):
 
 @app.get("/quotes", response_class=HTMLResponse)
 def quotes_page(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     quotes = db.query(models.Quote).order_by(models.Quote.created_at.desc()).all()
     customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
     return templates.TemplateResponse(request, "quotes.html", {
@@ -354,9 +365,9 @@ def quotes_page(request: Request, db: Session = Depends(db_dependency)):
 
 @app.post("/quotes/new")
 async def quotes_new(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     form = await request.form()
     product_ids = form.getlist("product_id")
     descriptions = form.getlist("description")
@@ -379,27 +390,27 @@ async def quotes_new(request: Request, db: Session = Depends(db_dependency)):
 
 @app.post("/quotes/{quote_id}/status")
 def quotes_status(request: Request, quote_id: int, status: str = Form(...), db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.set_quote_status(db, quote_id, status)
     return RedirectResponse("/quotes", status_code=303)
 
 
 @app.post("/quotes/{quote_id}/allocate")
 def quotes_allocate(request: Request, quote_id: int, allocate: str = Form(...), db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.set_quote_allocate_stock(db, quote_id, allocate == "true")
     return RedirectResponse("/quotes", status_code=303)
 
 
 @app.get("/quotes/{quote_id}/pdf")
 def quote_pdf(quote_id: int, request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     payload = crud.quote_payload(db, quote_id)
     html_path = PDF_DIR / f"quote_{quote_id}.html"
     pdf_path = PDF_DIR / f"Quotation_{payload['quote_number'].replace(' ', '_')}_Rev_{payload['revision']}.pdf"
@@ -413,22 +424,22 @@ def quote_pdf(quote_id: int, request: Request, db: Session = Depends(db_dependen
 
 @app.get("/orders", response_class=HTMLResponse)
 def orders_page(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     orders = db.query(models.Order).order_by(models.Order.created_at.desc()).all()
     customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
     return templates.TemplateResponse(request, "orders.html", {
         "user": user, "active": "orders", "orders": orders, "customers": customers,
-        "products_json": products_json(db),
+        "products_json": products_json(db), "drivers": crud.list_drivers(db),
     })
 
 
 @app.post("/orders/new")
 async def orders_new(request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     form = await request.form()
     product_ids = form.getlist("product_id")
     descriptions = form.getlist("description")
@@ -451,27 +462,27 @@ async def orders_new(request: Request, db: Session = Depends(db_dependency)):
 
 @app.post("/orders/{order_id}/status")
 def orders_status(request: Request, order_id: int, status: str = Form(...), db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.set_order_status(db, order_id, status)
     return RedirectResponse("/orders", status_code=303)
 
 
 @app.post("/orders/{order_id}/allocate")
 def orders_allocate(request: Request, order_id: int, allocate: str = Form(...), db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     crud.set_order_allocate_stock(db, order_id, allocate == "true")
     return RedirectResponse("/orders", status_code=303)
 
 
 @app.get("/orders/{order_id}/pdf")
 def order_pdf(order_id: int, request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
     payload = crud.order_payload(db, order_id)
     html_path = PDF_DIR / f"order_{order_id}.html"
     pdf_path = PDF_DIR / f"Order_Confirmation_{payload['order_number'].replace(' ', '_')}.pdf"
@@ -485,14 +496,80 @@ def order_pdf(order_id: int, request: Request, db: Session = Depends(db_dependen
 
 @app.post("/orders/{order_id}/deliveries")
 def orders_schedule_delivery_page(
-    request: Request, order_id: int, driver_name: str = Form(...), vehicle: str = Form(...),
+    request: Request, order_id: int, vehicle: str = Form(...),
+    driver_user_id: str = Form(""), scheduled_date: str = Form(""),
     db: Session = Depends(db_dependency),
 ):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    parsed_date = date.fromisoformat(scheduled_date) if scheduled_date else None
+    crud.create_delivery(
+        db, order_id, vehicle,
+        driver_user_id=int(driver_user_id) if driver_user_id else None,
+        scheduled_date=parsed_date,
+    )
+    return RedirectResponse("/orders", status_code=303)
+
+
+# --- drivers (office admin) ---------------------------------------------------------------
+
+@app.get("/drivers", response_class=HTMLResponse)
+def drivers_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "drivers.html", {
+        "user": user, "active": "drivers", "drivers": crud.list_drivers(db),
+    })
+
+
+@app.post("/drivers/new")
+def drivers_new(
+    request: Request, full_name: str = Form(...), username: str = Form(...), pin: str = Form(...),
+    db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.create_driver(db, full_name, username, pin)
+    return RedirectResponse("/drivers", status_code=303)
+
+
+# --- driver login (PIN) + driver dashboard --------------------------------------------------
+
+@app.get("/driver/login", response_class=HTMLResponse)
+def driver_login_page(request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if user:
+        return RedirectResponse("/driver" if user.role == "Driver" else "/", status_code=303)
+    return templates.TemplateResponse(request, "driver_login.html", {
+        "user": None, "drivers": crud.list_drivers(db),
+    })
+
+
+@app.post("/driver/login")
+def driver_login_submit(request: Request, username: str = Form(...), pin: str = Form(...),
+                         db: Session = Depends(db_dependency)):
+    user = crud.authenticate(db, username, pin)
+    if not user or user.role != "Driver":
+        return templates.TemplateResponse(request, "driver_login.html", {
+            "user": None, "drivers": crud.list_drivers(db), "error": "Incorrect PIN — try again",
+        }, status_code=401)
+    token = signer.dumps({"user_id": user.user_id})
+    response = RedirectResponse("/driver", status_code=303)
+    response.set_cookie("session", token, httponly=True, samesite="lax")
+    return response
+
+
+@app.get("/driver", response_class=HTMLResponse)
+def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
     user = get_user_or_none(request, db)
     if not user:
-        return RedirectResponse("/login", status_code=303)
-    crud.create_delivery(db, order_id, driver_name, vehicle)
-    return RedirectResponse("/orders", status_code=303)
+        return RedirectResponse("/driver/login", status_code=303)
+    return templates.TemplateResponse(request, "driver_dashboard.html", {
+        "user": user, "jobs": crud.deliveries_for_driver(db, user.user_id),
+    })
 
 
 # --- driver-facing page: no login, just the link (POD + tracking) ------------------------
@@ -537,3 +614,34 @@ def submit_pod(
 
     crud.record_pod(db, delivery, signed_by, sig_name, photo_name, latitude, longitude)
     return {"ok": True}
+
+
+@app.get("/d/{token}/pod.pdf")
+def download_pod_by_token(token: str, db: Session = Depends(db_dependency)):
+    """No login needed — same principle as the delivery link itself: whoever
+    has the link can view/download that one delivery's signed POD."""
+    delivery = crud.get_delivery_by_token(db, token)
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery link not found")
+    if delivery.status != "Delivered":
+        raise HTTPException(status_code=409, detail="This delivery hasn't been signed off yet")
+    pdf_bytes = pod_pdf.generate_pod_pdf(delivery, UPLOAD_DIR, LOGO_PATH)
+    filename = f"POD_{delivery.order.order_number.replace(' ', '_')}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@app.get("/api/deliveries/{delivery_id}/pod.pdf")
+def download_pod_office(request: Request, delivery_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    delivery = crud.get_delivery(db, delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    if delivery.status != "Delivered":
+        raise HTTPException(status_code=409, detail="This delivery hasn't been signed off yet")
+    pdf_bytes = pod_pdf.generate_pod_pdf(delivery, UPLOAD_DIR, LOGO_PATH)
+    filename = f"POD_{delivery.order.order_number.replace(' ', '_')}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": f'inline; filename="{filename}"'})

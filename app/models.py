@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric,
+    CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Numeric,
     String, UniqueConstraint, Boolean, func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -32,7 +32,6 @@ class AppUser(Base):
     role = Column(String, nullable=False, default="Sales")
     active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
-
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -264,8 +263,10 @@ class Delivery(Base):
 
     delivery_id = Column(Integer, primary_key=True)
     order_id = Column(Integer, ForeignKey("orders.order_id"), nullable=False)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=True)
     driver_name = Column(String, nullable=False, default="")
     vehicle = Column(String, nullable=False, default="")
+    scheduled_date = Column(Date, nullable=True)
     status = Column(String, nullable=False, default="Scheduled")
     access_token = Column(String, nullable=False, unique=True)  # driver's link, no login needed
     pod_signed_by = Column(String, nullable=False, default="")
@@ -277,6 +278,7 @@ class Delivery(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     order = relationship("Order", back_populates="deliveries")
+    driver_user = relationship("AppUser")
     pings = relationship("LocationPing", cascade="all, delete-orphan", backref="delivery")
 
     __table_args__ = (

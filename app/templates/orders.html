@@ -73,12 +73,19 @@
       <td>
         {% if o.deliveries %}
           {% for d in o.deliveries %}
-            <div><a href="/d/{{ d.access_token }}" target="_blank">{{ d.driver_name }} · {{ d.status }}</a></div>
+            <div>
+              <a href="/d/{{ d.access_token }}" target="_blank">{{ d.driver_name }} · {{ d.status }}</a>
+              {% if d.status == 'Delivered' %}<a href="/api/deliveries/{{ d.delivery_id }}/pod.pdf" target="_blank" style="margin-left:6px;">POD PDF</a>{% endif %}
+            </div>
           {% endfor %}
         {% elif o.status == 'Confirmed' %}
-          <form method="post" action="/orders/{{ o.order_id }}/deliveries" style="display:flex;gap:6px;">
-            <input type="text" name="driver_name" placeholder="driver" style="width:80px;" required>
+          <form method="post" action="/orders/{{ o.order_id }}/deliveries" style="display:flex;gap:6px;flex-wrap:wrap;">
+            <select name="driver_user_id" style="width:110px;" required>
+              <option value="" disabled selected>Driver</option>
+              {% for d in drivers %}<option value="{{ d.user_id }}">{{ d.full_name }}</option>{% endfor %}
+            </select>
             <input type="text" name="vehicle" placeholder="vehicle" style="width:70px;" required>
+            <input type="date" name="scheduled_date" style="width:130px;">
             <button class="btn btn-outline btn-small" type="submit">Schedule</button>
           </form>
         {% else %}

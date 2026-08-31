@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Driver sign in — Tiger One</title>
+  <style>
+    :root { --orange:#E3783E; --orange-dark:#B65321; --ink:#17191C; --line:#DFE2E4; --muted:#70757C; --surface:#F4F5F5; --red:#B42318; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--ink); color: #fff; min-height: 100vh; }
+    header { text-align: center; padding: 36px 20px 10px; }
+    header h1 { margin: 0; font-size: 24px; font-weight: 800; }
+    header h1 span { color: var(--orange); }
+    header p { color: #9aa0a8; font-size: 14px; margin: 4px 0 0; }
+    main { max-width: 420px; margin: 0 auto; padding: 20px; }
+
+    #step-name .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .driver-btn { background: #24272B; border: 1px solid #33363B; color: #fff; border-radius: 14px; padding: 22px 12px; font-size: 17px; font-weight: 700; text-align: center; cursor: pointer; }
+    .driver-btn:active { background: var(--orange); }
+
+    #step-pin { display: none; text-align: center; }
+    #step-pin .who { font-size: 18px; font-weight: 700; margin: 10px 0 4px; }
+    #step-pin .change { color: #9aa0a8; font-size: 13px; text-decoration: underline; background: none; border: 0; }
+    .dots { display: flex; justify-content: center; gap: 12px; margin: 22px 0; }
+    .dots .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #4b4f56; }
+    .dots .dot.filled { background: var(--orange); border-color: var(--orange); }
+    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .key { background: #24272B; border: 1px solid #33363B; color: #fff; border-radius: 14px; padding: 20px 0; font-size: 24px; font-weight: 700; cursor: pointer; }
+    .key:active { background: var(--orange); }
+    .key.wide { font-size: 15px; font-weight: 600; }
+    .error { color: #ff8a75; font-size: 14px; margin: 10px 0 0; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Tiger <span>One</span></h1>
+    <p>Driver sign in</p>
+  </header>
+  <main>
+    {% if error %}<p class="error" style="text-align:center;">{{ error }}</p>{% endif %}
+
+    <div id="step-name">
+      <p style="text-align:center;color:#9aa0a8;">Tap your name to continue</p>
+      <div class="grid">
+        {% for d in drivers %}
+        <div class="driver-btn" data-username="{{ d.username }}" data-name="{{ d.full_name }}">{{ d.full_name }}</div>
+        {% endfor %}
+      </div>
+      {% if not drivers %}<p style="text-align:center;color:#9aa0a8;">No drivers set up yet — ask the office to add one.</p>{% endif %}
+    </div>
+
+    <div id="step-pin">
+      <div class="who" id="who-label"></div>
+      <button type="button" class="change" id="change-driver">Not you? Choose again</button>
+      <div class="dots" id="dots"></div>
+      <div class="keypad">
+        <div class="key" data-k="1">1</div><div class="key" data-k="2">2</div><div class="key" data-k="3">3</div>
+        <div class="key" data-k="4">4</div><div class="key" data-k="5">5</div><div class="key" data-k="6">6</div>
+        <div class="key" data-k="7">7</div><div class="key" data-k="8">8</div><div class="key" data-k="9">9</div>
+        <div class="key wide" id="clear-key">Clear</div><div class="key" data-k="0">0</div><div class="key wide" id="back-key">⌫</div>
+      </div>
+    </div>
+
+    <form id="login-form" method="post" action="/driver/login" style="display:none;">
+      <input type="hidden" name="username" id="f-username">
+      <input type="hidden" name="pin" id="f-pin">
+    </form>
+  </main>
+
+  <script>
+    const stepName = document.getElementById('step-name');
+    const stepPin = document.getElementById('step-pin');
+    const whoLabel = document.getElementById('who-label');
+    const dotsEl = document.getElementById('dots');
+    let pin = '';
+    let username = '';
+    const MAX_PIN = 6;
+
+    function renderDots() {
+      dotsEl.innerHTML = '';
+      const len = Math.max(pin.length, 4);
+      for (let i = 0; i < Math.max(pin.length + 1, 4); i++) {
+        if (i >= 6) break;
+        const d = document.createElement('div');
+        d.className = 'dot' + (i < pin.length ? ' filled' : '');
+        dotsEl.appendChild(d);
+      }
+    }
+
+    document.querySelectorAll('.driver-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        username = btn.dataset.username;
+        whoLabel.textContent = btn.dataset.name;
+        pin = '';
+        renderDots();
+        stepName.style.display = 'none';
+        stepPin.style.display = 'block';
+      });
+    });
+
+    document.getElementById('change-driver').addEventListener('click', () => {
+      stepPin.style.display = 'none';
+      stepName.style.display = 'block';
+      pin = '';
+    });
+
+    document.querySelectorAll('.key[data-k]').forEach(key => {
+      key.addEventListener('click', () => {
+        if (pin.length >= MAX_PIN) return;
+        pin += key.dataset.k;
+        renderDots();
+        if (pin.length >= 4) {
+          // auto-submit once a plausible PIN length is reached, after a short pause
+          if (pin.length === 4) {
+            setTimeout(() => { if (pin.length === 4) submit(); }, 350);
+          } else {
+            submit();
+          }
+        }
+      });
+    });
+    document.getElementById('back-key').addEventListener('click', () => { pin = pin.slice(0, -1); renderDots(); });
+    document.getElementById('clear-key').addEventListener('click', () => { pin = ''; renderDots(); });
+
+    function submit() {
+      document.getElementById('f-username').value = username;
+      document.getElementById('f-pin').value = pin;
+      document.getElementById('login-form').submit();
+    }
+  </script>
+</body>
+</html>

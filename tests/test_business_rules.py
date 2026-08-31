@@ -219,7 +219,7 @@ def test_delivery_pod_and_tracking(db):
     }, [{"product_id": product.product_id, "description": "C30", "quantity": 5, "unit": "m³", "unit_price": 142.345}], "admin")
     db.commit()
 
-    delivery = crud.create_delivery(db, order.order_id, "Dan", "TC01")
+    delivery = crud.create_delivery(db, order.order_id, vehicle="TC01", driver_name="Dan")
     db.commit()
     assert crud.get_delivery_by_token(db, delivery.access_token) is not None
 
@@ -232,3 +232,45 @@ def test_delivery_pod_and_tracking(db):
     db.commit()
     assert delivery.status == "Delivered"
     assert delivery.pod_signed_by == "Site Foreman"
+
+
+def test_driver_accounts_and_dashboard(db):
+    """Driver logins (PIN-based) and the 'my jobs' query the driver dashboard uses."""
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    # authenticate() is the same function used for office logins — the PIN
+    # is just what got hashed into password_hash for a Driver-role account.
+    assert crud.authenticate(db, "dan", "4821") is not None
+    assert crud.authenticate(db, "dan", "0000") is None
+    assert driver.role == "Driver"
+
+    commercial = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Test Trade Ltd"})
+    material = crud.save_material(db, {
+        "code": "CEMENT", "name": "Cement", "unit": "kg", "on_hand": 5000,
+        "reorder_level": 1000, "reorder_quantity": 2000, "unit_cost": 0.12, "supplier": "Test",
+    })
+    product = crud.save_product(db, {
+        "code": "C30", "name": "C30 Concrete", "description": "", "sell_unit": "m³", "default_unit_price": 142.345,
+    }, [{"material_id": material.material_id, "quantity_per_unit": 300, "waste_percent": 2}])
+    order = crud.save_order(db, {
+        "customer_id": commercial.customer_id, "project": "Driveway", "site_address": "1 Test Rd",
+        "requested_date": "2026-09-05", "status": "Confirmed", "tax_rate": 20,
+    }, [{"product_id": product.product_id, "description": "C30", "quantity": 5, "unit": "m³", "unit_price": 142.345}], "admin")
+    db.commit()
+
+    # Assigning the driver by account derives driver_name automatically.
+    delivery = crud.create_delivery(db, order.order_id, vehicle="TC01", driver_user_id=driver.user_id)
+    db.commit()
+    assert delivery.driver_name == "Dan Driver"
+    assert delivery.scheduled_date is not None  # defaults to today when not given
+
+    jobs = crud.deliveries_for_driver(db, driver.user_id)
+    assert len(jobs) == 1
+    assert jobs[0].delivery_id == delivery.delivery_id
+
+    # Once delivered, it drops off the open-jobs list the dashboard shows.
+    crud.record_pod(db, delivery, "Site Foreman", "sig.png", "", None, None)
+    db.commit()
+    assert crud.deliveries_for_driver(db, driver.user_id) == []
+    assert len(crud.deliveries_for_driver(db, driver.user_id, include_delivered=True)) == 1

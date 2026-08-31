@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base
@@ -29,9 +29,32 @@ connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite")
 engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
+# Lightweight stopgap for adding columns to a database that already exists
+# (e.g. the live Render Postgres instance) without a full migrations tool.
+# Base.metadata.create_all only creates missing TABLES, not missing COLUMNS
+# on tables that already exist — this covers that gap for now. Worth
+# replacing with Alembic once real customer data is on there and schema
+# changes need to be safer/reversible than "add a nullable column".
+_LIGHT_MIGRATIONS = [
+    "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS driver_user_id INTEGER REFERENCES app_users(user_id)",
+    "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS scheduled_date DATE",
+]
+
+
+def _run_light_migrations() -> None:
+    if engine.dialect.name != "postgresql":
+        return  # SQLite dev DBs are recreated from scratch each time — nothing to migrate.
+    with engine.begin() as conn:
+        for statement in _LIGHT_MIGRATIONS:
+            try:
+                conn.execute(text(statement))
+            except Exception:
+                pass  # column already present, or another instance just added it — safe to ignore
+
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    _run_light_migrations()
 
 
 @contextmanager

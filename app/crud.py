@@ -6,7 +6,7 @@ tests/test_business_rules.py) carry over unchanged.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func, select
@@ -35,6 +35,26 @@ def ensure_admin_user(db: Session) -> None:
         full_name="Daniel Anderson", role="Commercial Manager",
     ))
     db.flush()
+
+
+def create_driver(db: Session, full_name: str, username: str, pin: str) -> models.AppUser:
+    """A driver account authenticates with a short PIN instead of a password —
+    same hashing underneath (crud.authenticate doesn't care which it was)."""
+    driver = models.AppUser(
+        username=username.strip().lower(), password_hash=hash_password(pin),
+        full_name=full_name.strip(), role="Driver",
+    )
+    db.add(driver)
+    db.flush()
+    return driver
+
+
+def list_drivers(db: Session) -> list[models.AppUser]:
+    return list(db.scalars(
+        select(models.AppUser)
+        .where(models.AppUser.role == "Driver", models.AppUser.active.is_(True))
+        .order_by(models.AppUser.full_name)
+    ))
 
 
 def authenticate(db: Session, username: str, password: str) -> models.AppUser | None:
@@ -492,9 +512,17 @@ def database_summary(db: Session) -> dict:
 
 # --- deliveries: POD + tracking (new) ----------------------------------------------
 
-def create_delivery(db: Session, order_id: int, driver_name: str, vehicle: str) -> models.Delivery:
+def create_delivery(
+    db: Session, order_id: int, vehicle: str,
+    driver_user_id: int | None = None, driver_name: str = "",
+    scheduled_date: date | None = None,
+) -> models.Delivery:
+    if driver_user_id and not driver_name:
+        driver = db.get(models.AppUser, driver_user_id)
+        driver_name = driver.full_name if driver else ""
     delivery = models.Delivery(
-        order_id=order_id, driver_name=driver_name, vehicle=vehicle,
+        order_id=order_id, driver_user_id=driver_user_id, driver_name=driver_name,
+        vehicle=vehicle, scheduled_date=scheduled_date or datetime.now(timezone.utc).date(),
         status="Scheduled", access_token=new_access_token(),
     )
     db.add(delivery)
@@ -502,8 +530,20 @@ def create_delivery(db: Session, order_id: int, driver_name: str, vehicle: str) 
     return delivery
 
 
+def get_delivery(db: Session, delivery_id: int) -> models.Delivery | None:
+    return db.get(models.Delivery, delivery_id)
+
+
 def get_delivery_by_token(db: Session, token: str) -> models.Delivery | None:
     return db.scalar(select(models.Delivery).where(models.Delivery.access_token == token))
+
+
+def deliveries_for_driver(db: Session, driver_user_id: int, include_delivered: bool = False) -> list[models.Delivery]:
+    """A driver's own jobs — what their dashboard shows after they log in."""
+    query = select(models.Delivery).where(models.Delivery.driver_user_id == driver_user_id)
+    if not include_delivered:
+        query = query.where(models.Delivery.status != "Delivered", models.Delivery.status != "Cancelled")
+    return list(db.scalars(query.order_by(models.Delivery.scheduled_date, models.Delivery.delivery_id)))
 
 
 def todays_jobs(db: Session, today: str) -> list[dict]:
