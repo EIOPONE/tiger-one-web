@@ -174,6 +174,14 @@ Drivers get their own account, separate from office logins:
   PDF is generated with `reportlab` — pure Python, so unlike the quote/order
   PDF button (which needs a local browser), this one works the same on
   Render as it does on your PC.
+- The signed-off location shows as a small static map with a pin (via
+  `staticmap`, using OpenStreetMap tiles — no API key needed), not raw
+  coordinates. If the map image can't be generated for any reason (no
+  internet reachable, tile server down), it falls back to plain text
+  coordinates instead of breaking the PDF — tested and confirmed working,
+  though the map image itself (the "happy path") still needs a real test
+  once deployed, since this sandbox's network can't reach the tile
+  servers to prove that part end-to-end.
 - Scheduling a delivery from the Orders page now picks a driver from a
   dropdown (instead of typing a name) and a date, so it shows up
   correctly on that driver's dashboard.

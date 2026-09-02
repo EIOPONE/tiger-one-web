@@ -22,6 +22,25 @@ MUTED = (0x70 / 255, 0x75 / 255, 0x7C / 255)
 ORANGE = (0xE3 / 255, 0x78 / 255, 0x3E / 255)
 
 
+def _generate_location_map(latitude, longitude, width_px: int = 360, height_px: int = 200):
+    """A small static map image with a pin at the sign-off location, using
+    OpenStreetMap tiles — no API key needed. Returns a BytesIO PNG, or None
+    if the map couldn't be generated (no internet reachable, tile server
+    down, etc) — the caller falls back to plain text coordinates in that
+    case, so a map failure never breaks the PDF itself."""
+    try:
+        from staticmap import CircleMarker, StaticMap
+        m = StaticMap(width_px, height_px)
+        m.add_marker(CircleMarker((float(longitude), float(latitude)), "#E3783E", 14))
+        image = m.render(zoom=15)
+        buf = BytesIO()
+        image.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
+
+
 def generate_pod_pdf(delivery: models.Delivery, upload_dir: Path, logo_path: Path | None = None) -> bytes:
     order = delivery.order
     buf = BytesIO()
@@ -65,8 +84,22 @@ def generate_pod_pdf(delivery: models.Delivery, upload_dir: Path, logo_path: Pat
     field("Driver / vehicle", f"{delivery.driver_name} · {delivery.vehicle}".strip(" ·"))
     field("Signed by", delivery.pod_signed_by)
     field("Signed at", delivery.pod_signed_at.strftime("%d %B %Y, %H:%M UTC") if delivery.pod_signed_at else "—")
+
     if delivery.pod_latitude and delivery.pod_longitude:
-        field("GPS location at sign-off", f"{delivery.pod_latitude}, {delivery.pod_longitude}")
+        map_buf = _generate_location_map(delivery.pod_latitude, delivery.pod_longitude)
+        if map_buf:
+            c.setFont("Helvetica", 9)
+            c.setFillColorRGB(*MUTED)
+            c.drawString(margin, y, "LOCATION AT SIGN-OFF")
+            y -= 3 * mm
+            map_h = 32 * mm
+            map_w = 58 * mm
+            c.drawImage(ImageReader(map_buf), margin, y - map_h, width=map_w, height=map_h)
+            c.setStrokeColorRGB(0.87, 0.89, 0.9)
+            c.rect(margin, y - map_h, map_w, map_h)
+            y -= map_h + 10 * mm
+        else:
+            field("GPS location at sign-off", f"{delivery.pod_latitude}, {delivery.pod_longitude}")
 
     y -= 4 * mm
     c.setFont("Helvetica", 9)
