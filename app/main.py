@@ -632,6 +632,32 @@ def vehicles_page(request: Request, db: Session = Depends(db_dependency)):
     })
 
 
+@app.get("/vehicles/map", response_class=HTMLResponse)
+def vehicles_map_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "vehicles_map.html", {
+        "user": user, "active": "vehicles",
+    })
+
+
+@app.get("/api/vehicles/positions")
+def vehicles_positions(request: Request, db: Session = Depends(db_dependency)):
+    """Feeds the fleet map — polled every ~20s from the browser so pins
+    move without a page reload."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    vehicles = crud.list_vehicles(db)
+    return [{
+        "vehicle_id": v.vehicle_id, "registration": v.registration, "description": v.description,
+        "latitude": float(v.last_latitude) if v.last_latitude is not None else None,
+        "longitude": float(v.last_longitude) if v.last_longitude is not None else None,
+        "last_position_at": v.last_position_at.isoformat() if v.last_position_at else None,
+    } for v in vehicles if v.last_latitude is not None and v.last_longitude is not None]
+
+
 @app.post("/vehicles/new")
 def vehicles_new(request: Request, registration: str = Form(...), description: str = Form(""),
                   traccar_device_id: str = Form(""), db: Session = Depends(db_dependency)):

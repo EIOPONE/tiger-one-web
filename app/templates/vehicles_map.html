@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Fleet Map — Tiger One{% endblock %}
+{% block page_title %}Fleet map{% endblock %}
+{% block page_subtitle %}Live positions from Traccar, updating automatically. Only vehicles with a known position show up.{% endblock %}
+{% block content %}
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <div id="fleet-map" style="height:520px;width:100%;"></div>
+</div>
+<div id="fleet-empty" class="card" style="display:none;">
+  <div class="empty">No vehicles are reporting a position yet — link a vehicle to a Traccar device on the Vehicles page, and make sure Traccar's set up and reporting.</div>
+</div>
+
+<script>
+  const map = L.map('fleet-map').setView([52.4862, -1.8904], 10);  // sensible default (UK Midlands); auto-fits once positions arrive
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(map);
+
+  const markers = {};  // vehicle_id -> L.marker
+
+  function timeAgo(iso) {
+    if (!iso) return 'no fix yet';
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
+    return `${Math.round(mins / 60)} hr ago`;
+  }
+
+  async function refreshFleetMap() {
+    try {
+      const res = await fetch('/api/vehicles/positions');
+      if (!res.ok) return;
+      const vehicles = await res.json();
+
+      document.getElementById('fleet-empty').style.display = vehicles.length ? 'none' : 'block';
+      document.getElementById('fleet-map').style.display = vehicles.length ? 'block' : 'none';
+      if (!vehicles.length) return;
+
+      const seen = new Set();
+      vehicles.forEach(v => {
+        seen.add(v.vehicle_id);
+        const label = `<b>${v.registration}</b>${v.description ? ' — ' + v.description : ''}<br>${timeAgo(v.last_position_at)}`;
+        if (markers[v.vehicle_id]) {
+          markers[v.vehicle_id].setLatLng([v.latitude, v.longitude]);
+          markers[v.vehicle_id].setPopupContent(label);
+        } else {
+          markers[v.vehicle_id] = L.marker([v.latitude, v.longitude]).addTo(map).bindPopup(label);
+        }
+      });
+      // Drop pins for vehicles that no longer have a position (e.g. unlinked from Traccar)
+      Object.keys(markers).forEach(id => {
+        if (!seen.has(Number(id))) { map.removeLayer(markers[id]); delete markers[id]; }
+      });
+
+      const group = L.featureGroup(Object.values(markers));
+      map.fitBounds(group.getBounds().pad(0.2), { maxZoom: 14 });
+    } catch (e) { /* quietly retry next cycle */ }
+  }
+
+  refreshFleetMap();
+  setInterval(refreshFleetMap, 20000);
+</script>
+
+{% endblock %}
