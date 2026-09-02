@@ -334,6 +334,12 @@ class Vehicle(Base):
     registration = Column(String, nullable=False, unique=True)  # number plate
     description = Column(String, nullable=False, default="")  # e.g. "8-wheel mixer"
     active = Column(Boolean, nullable=False, default=True)
+    # Links this vehicle to a device entry on the Traccar server — set once
+    # per vehicle when its tablet is set up (see /vehicles).
+    traccar_device_id = Column(String, nullable=True)
+    last_latitude = Column(Numeric(9, 6), nullable=True)
+    last_longitude = Column(Numeric(9, 6), nullable=True)
+    last_position_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 

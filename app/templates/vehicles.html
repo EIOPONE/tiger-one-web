@@ -11,6 +11,8 @@
       <div><label for="registration">Registration</label><input type="text" id="registration" name="registration" required placeholder="e.g. TC01 or a real plate"></div>
       <div><label for="description">Description</label><input type="text" id="description" name="description" placeholder="e.g. 8-wheel mixer"></div>
     </div>
+    <label for="traccar_device_id">Traccar device ID (optional)</label>
+    <input type="text" id="traccar_device_id" name="traccar_device_id" placeholder="the identifier entered into Traccar Client on this vehicle's tablet">
     <button class="btn btn-primary" type="submit" style="margin-top:10px;">Add vehicle</button>
   </form>
 </div>
@@ -19,11 +21,20 @@
   <h2>Fleet</h2>
   {% if vehicles %}
   <table>
-    <tr><th>Registration</th><th>Description</th><th></th></tr>
+    <tr><th>Registration</th><th>Description</th><th>Live tracking</th><th></th></tr>
     {% for v in vehicles %}
     <tr>
       <td>{{ v.registration }}</td>
       <td class="muted">{{ v.description }}</td>
+      <td>
+        {% if not v.traccar_device_id %}
+          <span class="muted">Not linked to Traccar</span>
+        {% elif v.last_position_at %}
+          <span class="pill pill-completed">● Last seen {{ v.last_position_at.strftime('%H:%M') }}</span>
+        {% else %}
+          <span class="muted">Linked ({{ v.traccar_device_id }}) — no position yet</span>
+        {% endif %}
+      </td>
       <td>
         <form method="post" action="/vehicles/{{ v.vehicle_id }}/deactivate" onsubmit="return confirm('Remove {{ v.registration }} from the active fleet list?');">
           <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import models
 from . import xero_client
+from . import traccar_client
 from .security import hash_password, verify_password, new_access_token
 
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID", "")
@@ -588,13 +589,20 @@ def get_delivery_by_token(db: Session, token: str) -> models.Delivery | None:
 
 # --- vehicles ---------------------------------------------------------------------------
 
-def save_vehicle(db: Session, registration: str, description: str = "", vehicle_id: int | None = None) -> models.Vehicle:
+def save_vehicle(
+    db: Session, registration: str, description: str = "",
+    traccar_device_id: str = "", vehicle_id: int | None = None,
+) -> models.Vehicle:
     if vehicle_id:
         vehicle = db.get(models.Vehicle, vehicle_id)
         vehicle.registration = registration.strip().upper()
         vehicle.description = description.strip()
+        vehicle.traccar_device_id = traccar_device_id.strip() or None
     else:
-        vehicle = models.Vehicle(registration=registration.strip().upper(), description=description.strip())
+        vehicle = models.Vehicle(
+            registration=registration.strip().upper(), description=description.strip(),
+            traccar_device_id=traccar_device_id.strip() or None,
+        )
         db.add(vehicle)
     db.flush()
     return vehicle
@@ -877,3 +885,45 @@ def deliveries_completed_since(db: Session, since: datetime) -> list[models.Deli
         .where(models.Delivery.status == "Delivered", models.Delivery.pod_signed_at > since)
         .order_by(models.Delivery.pod_signed_at)
     ))
+
+
+# --- Traccar (live truck tracking) --------------------------------------------------------
+
+def sync_vehicle_positions(db: Session, base_url: str, username: str, password: str) -> int:
+    """Pulls current positions from Traccar and updates every vehicle whose
+    traccar_device_id matches a registered Traccar device. Returns how many
+    vehicles were updated. Best-effort — never raises, same principle as
+    the Xero push functions: a Traccar hiccup (or it simply not being
+    configured yet) must never break anything else in the app."""
+    try:
+        devices = traccar_client.get_devices(base_url, username, password)
+        positions = traccar_client.get_positions(base_url, username, password)
+    except Exception:
+        return 0
+
+    # Positions are keyed by Traccar's own internal device id, not the
+    # human-friendly identifier typed into Traccar Client on the tablet —
+    # the devices list is what bridges the two.
+    unique_id_by_internal_id = {d["id"]: d.get("uniqueId") for d in devices}
+    position_by_unique_id = {}
+    for pos in positions:
+        unique_id = unique_id_by_internal_id.get(pos.get("deviceId"))
+        if unique_id:
+            position_by_unique_id[unique_id] = pos
+
+    vehicles = list(db.scalars(select(models.Vehicle).where(models.Vehicle.traccar_device_id.isnot(None))))
+    updated = 0
+    for vehicle in vehicles:
+        pos = position_by_unique_id.get(vehicle.traccar_device_id)
+        if not pos:
+            continue
+        vehicle.last_latitude = pos.get("latitude")
+        vehicle.last_longitude = pos.get("longitude")
+        fix_time = pos.get("fixTime")
+        try:
+            vehicle.last_position_at = datetime.fromisoformat(fix_time.replace("Z", "+00:00")) if fix_time else datetime.now(timezone.utc)
+        except ValueError:
+            vehicle.last_position_at = datetime.now(timezone.utc)
+        updated += 1
+    db.flush()
+    return updated

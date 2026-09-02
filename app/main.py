@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -29,6 +30,9 @@ signer = URLSafeSerializer(SECRET_KEY, salt="tiger-one-session")
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID", "")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET", "")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI", "http://127.0.0.1:8000/xero/callback")
+TRACCAR_URL = os.environ.get("TRACCAR_URL", "")
+TRACCAR_USERNAME = os.environ.get("TRACCAR_USERNAME", "")
+TRACCAR_PASSWORD = os.environ.get("TRACCAR_PASSWORD", "")
 
 app = FastAPI(title="Tiger One")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -41,6 +45,24 @@ def on_startup():
     init_db()
     with get_session() as db:
         crud.ensure_admin_user(db)
+    if TRACCAR_URL and TRACCAR_USERNAME and TRACCAR_PASSWORD:
+        asyncio.create_task(_traccar_poll_loop())
+
+
+async def _traccar_poll_loop():
+    """Pulls positions from Traccar every 30s and updates the matching
+    vehicles. Runs for the lifetime of the app; only starts at all if
+    TRACCAR_URL/USERNAME/PASSWORD are set, so it's a complete no-op — not
+    even a background task — until Traccar's actually configured."""
+    while True:
+        try:
+            def _sync():
+                with get_session() as db:
+                    return crud.sync_vehicle_positions(db, TRACCAR_URL, TRACCAR_USERNAME, TRACCAR_PASSWORD)
+            await asyncio.to_thread(_sync)
+        except Exception:
+            pass  # never let a bad poll cycle kill the loop
+        await asyncio.sleep(30)
 
 
 def db_dependency():
@@ -612,11 +634,11 @@ def vehicles_page(request: Request, db: Session = Depends(db_dependency)):
 
 @app.post("/vehicles/new")
 def vehicles_new(request: Request, registration: str = Form(...), description: str = Form(""),
-                  db: Session = Depends(db_dependency)):
+                  traccar_device_id: str = Form(""), db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
-    crud.save_vehicle(db, registration, description)
+    crud.save_vehicle(db, registration, description, traccar_device_id)
     return RedirectResponse("/vehicles", status_code=303)
 
 

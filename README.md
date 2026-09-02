@@ -52,6 +52,33 @@ removes the reservation.
   on startup — fine for the changes made so far (all nullable, additive),
   but worth replacing before schema changes get more involved.
 
+## Truck tracking (Traccar)
+
+The beginnings of live tracking, built ahead of having a real Traccar
+server to test against — proven with a simulated Traccar server in the
+test suite, ready to go live the moment yours is up.
+
+- **/vehicles** now has an optional Traccar device ID field per vehicle —
+  this is the identifier you type into Traccar Client on that vehicle's
+  tablet, linking Tiger One's vehicle record to Traccar's device record.
+- A background task polls Traccar's REST API every 30 seconds and updates
+  each linked vehicle's last known position — but only starts at all if
+  `TRACCAR_URL`, `TRACCAR_USERNAME` and `TRACCAR_PASSWORD` are set as
+  environment variables. Until they are, this is a complete no-op, not
+  even a background task — nothing to break, nothing running.
+- Traccar's REST API keys positions by its own internal numeric device
+  id, not the friendly identifier typed into Traccar Client — the sync
+  logic bridges the two via Traccar's devices list. This was the trickiest
+  part to get right, and it's specifically tested for.
+- A Traccar outage (or it simply not being configured yet) never breaks
+  anything else — same principle as the Xero integration.
+
+**Not built yet**: a live map showing vehicle positions (currently just
+shows "last seen HH:MM" on the Vehicles page), and ETA calculation
+(needs a routing API — e.g. Google Directions — fed with the live
+position plus the delivery address). Natural next pieces once a real
+Traccar server is up and reporting.
+
 ## Xero
 
 One-way only — Tiger One is the source of truth for the business; Xero is

@@ -44,6 +44,10 @@ _LIGHT_MIGRATIONS = [
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_id VARCHAR",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_number VARCHAR",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_synced_at TIMESTAMP",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS traccar_device_id VARCHAR",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_latitude NUMERIC(9,6)",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude NUMERIC(9,6)",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_at TIMESTAMP",
 ]
 
 
