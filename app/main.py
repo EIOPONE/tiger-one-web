@@ -16,14 +16,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import crud, models
-from . import pdf_engine, quote_document, pod_pdf, xero_client, report_pdf
+from . import pod_pdf, xero_client, report_pdf, quote_pdf
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", BASE_DIR.parent / "uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-PDF_DIR = Path(os.environ.get("PDF_DIR", BASE_DIR.parent / "generated_pdfs"))
-PDF_DIR.mkdir(parents=True, exist_ok=True)
 LOGO_PATH = BASE_DIR / "branding" / "tiger_concrete_logo.jpg"
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 signer = URLSafeSerializer(SECRET_KEY, salt="tiger-one-session")
@@ -446,19 +444,15 @@ def quotes_allocate(request: Request, quote_id: int, allocate: str = Form(...), 
 
 
 @app.get("/quotes/{quote_id}/pdf")
-def quote_pdf(quote_id: int, request: Request, db: Session = Depends(db_dependency)):
+def quote_pdf_route(quote_id: int, request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
     payload = crud.quote_payload(db, quote_id)
-    html_path = PDF_DIR / f"quote_{quote_id}.html"
-    pdf_path = PDF_DIR / f"Quotation_{payload['quote_number'].replace(' ', '_')}_Rev_{payload['revision']}.pdf"
-    quote_document.write_quote_html(html_path, payload, LOGO_PATH)
-    ok, result = pdf_engine.print_to_pdf(html_path, pdf_path)
-    html_path.unlink(missing_ok=True)
-    if not ok:
-        raise HTTPException(status_code=500, detail=f"Could not create the PDF: {result}")
-    return FileResponse(pdf_path, media_type="application/pdf", filename=pdf_path.name)
+    pdf_bytes = quote_pdf.generate_quote_or_order_pdf(payload, LOGO_PATH, is_order=False)
+    filename = f"Quotation_{payload['quote_number'].replace(' ', '_')}_Rev_{payload['revision']}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 @app.get("/orders", response_class=HTMLResponse)
@@ -538,14 +532,10 @@ def order_pdf(order_id: int, request: Request, db: Session = Depends(db_dependen
     if isinstance(user, RedirectResponse):
         return user
     payload = crud.order_payload(db, order_id)
-    html_path = PDF_DIR / f"order_{order_id}.html"
-    pdf_path = PDF_DIR / f"Order_Confirmation_{payload['order_number'].replace(' ', '_')}.pdf"
-    quote_document.write_order_html(html_path, payload, LOGO_PATH)
-    ok, result = pdf_engine.print_to_pdf(html_path, pdf_path)
-    html_path.unlink(missing_ok=True)
-    if not ok:
-        raise HTTPException(status_code=500, detail=f"Could not create the PDF: {result}")
-    return FileResponse(pdf_path, media_type="application/pdf", filename=pdf_path.name)
+    pdf_bytes = quote_pdf.generate_quote_or_order_pdf(payload, LOGO_PATH, is_order=True)
+    filename = f"Order_Confirmation_{payload['order_number'].replace(' ', '_')}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 @app.post("/orders/{order_id}/deliveries")

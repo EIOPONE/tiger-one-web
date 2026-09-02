@@ -52,6 +52,17 @@ removes the reservation.
   on startup — fine for the changes made so far (all nullable, additive),
   but worth replacing before schema changes get more involved.
 
+## Quote and order PDFs now work on Render
+
+They didn't used to — `pdf_engine.py` (still in the repo, now unused)
+worked by shelling out to a locally-installed Edge or Chrome browser,
+which exists on the office PC but not on Render's servers, so clicking
+the PDF button on a live order gave a "Chrome could not be found" error.
+`quote_pdf.py` replaces it with the same `reportlab`-based approach as
+the POD and sales-report PDFs — tested with a 30-line quote to confirm
+the item table paginates correctly across pages, header row repeating on
+each page, before this was called done.
+
 ## Truck tracking (Traccar)
 
 The beginnings of live tracking, built ahead of having a real Traccar
@@ -171,9 +182,9 @@ Drivers get their own account, separate from office logins:
 - Once a POD is signed, both the driver and the office can download it as
   a PDF (`/d/{token}/pod.pdf` for the driver/customer copy, or the "POD
   PDF" link next to the delivery on the Orders page for the office). This
-  PDF is generated with `reportlab` — pure Python, so unlike the quote/order
-  PDF button (which needs a local browser), this one works the same on
-  Render as it does on your PC.
+  PDF is generated with `reportlab` — pure Python, so it works the same
+  on Render as it does on your PC (same approach as the quote/order PDFs
+  below).
 - The signed-off location shows as a small static map with a pin (via
   `staticmap`, using OpenStreetMap tiles — no API key needed), not raw
   coordinates. If the map image can't be generated for any reason (no
