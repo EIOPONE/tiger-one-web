@@ -1,0 +1,17 @@
+{
+  "name": "Tiger One Driver",
+  "short_name": "Tiger One",
+  "description": "Jobs, delivery sign-off, vehicle checks and clock-in for Tiger Concrete drivers",
+  "start_url": "/driver/login",
+  "scope": "/driver",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#17191C",
+  "theme_color": "#17191C",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

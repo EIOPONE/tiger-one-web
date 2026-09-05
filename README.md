@@ -257,6 +257,37 @@ username and password.
 - Permission checks happen on the server, not just by hiding buttons in
   the UI — confirmed by testing that a non-Admin user's direct POST to a
   delete endpoint is silently ignored, not just hidden from their screen.
+- **Admin can also delete customers** (/customers) — since a customer
+  can't be removed while quotes/orders still point at it (that link is
+  required, not optional), deleting a customer cascades: every quote and
+  order for that customer goes too, cleanly, with the same reservation
+  cleanup as deleting them individually. The confirm dialog tells you
+  how many quotes/orders will go with it before you commit — built for
+  wiping out fake test customers created during the soft rollout without
+  having to delete each of their quotes/orders by hand first.
+
+## Installable driver app (PWA)
+
+All driver-facing pages now link a proper web app manifest and a
+minimal service worker — confirmed live (manifest parses, icons serve,
+service worker registers with the right scope to cover `/driver/*`).
+On Android, "Add to Home Screen" now produces a real standalone app
+with its own icon and no browser address bar, not just a bookmark.
+
+- Icon generated from the existing "ONE" brand mark (`app/static/icon-192.png`
+  / `icon-512.png`) — no new artwork needed.
+- The service worker deliberately does **not** cache or serve driver
+  pages offline — job status, delivery state, and clock-in status must
+  always be fresh. Its only job is satisfying the browser's
+  installability requirement.
+- It's served from the site root (`/sw.js`, not `/static/sw.js`) —
+  a service worker can only control pages under the path it's served
+  from, and driver pages live under `/driver/...`.
+
+For an actual `.apk` file rather than "Add to Home Screen": see the
+separate `tiger-one-driver-android` project (a WebView wrapper, with
+native GPS/camera permission handling) — or try pwabuilder.com against
+this same manifest for a no-code path to an APK.
 
 ## Driver logins, tracking and signed PODs
 

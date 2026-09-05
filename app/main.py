@@ -230,6 +230,16 @@ def dashboard(db: Session = Depends(db_dependency), user=Depends(current_user)):
 
 # --- Web UI (office screens) ------------------------------------------------------------
 
+@app.get("/sw.js")
+def service_worker():
+    """Served from the root (not /static/) so its scope covers /driver/*
+    — a service worker can only control pages under the path it's served
+    from. This is what makes 'Add to Home Screen' produce a real
+    standalone app on Android instead of just a bookmark shortcut."""
+    sw_path = BASE_DIR / "static" / "sw.js"
+    return Response(content=sw_path.read_text(), media_type="application/javascript")
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, db: Session = Depends(db_dependency)):
     if get_user_or_none(request, db):
@@ -313,9 +323,19 @@ def customers_page(request: Request, db: Session = Depends(db_dependency)):
     if isinstance(user, RedirectResponse):
         return user
     customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
+    impacts = {c.customer_id: crud.customer_delete_impact(db, c.customer_id) for c in customers}
     return templates.TemplateResponse(request, "customers.html", {
-        "user": user, "active": "customers", "customers": customers,
+        "user": user, "active": "customers", "customers": customers, "impacts": impacts,
     })
+
+
+@app.post("/customers/{customer_id}/delete")
+def customers_delete(request: Request, customer_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.delete_customer(db, customer_id)
+    return RedirectResponse("/customers", status_code=303)
 
 
 @app.post("/customers/new")

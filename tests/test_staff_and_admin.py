@@ -114,3 +114,48 @@ def test_delete_is_harmless_on_a_nonexistent_id(db):
     """Admin double-clicking delete, or a stale page — must not raise."""
     crud.delete_quote(db, 99999)
     crud.delete_order(db, 99999)
+
+
+def test_delete_customer_with_no_quotes_or_orders(db):
+    customer = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Fake Test Ltd"})
+    db.commit()
+    impact = crud.customer_delete_impact(db, customer.customer_id)
+    assert impact == {"quote_count": 0, "order_count": 0}
+
+    crud.delete_customer(db, customer.customer_id)
+    db.commit()
+    assert db.get(crud.models.Customer, customer.customer_id) is None
+
+
+def test_delete_customer_cascades_their_quotes_and_orders(db):
+    """The actual use case: wiping a fake test customer along with every
+    fake quote and order created against it, in one action."""
+    quote, order, _material = _confirmed_order_and_quote(db)
+    customer_id = order.customer_id
+    db.commit()
+
+    impact = crud.customer_delete_impact(db, customer_id)
+    assert impact == {"quote_count": 1, "order_count": 1}
+
+    reserved_before = sum(row["reserved"] for row in crud.material_balances(db))
+    assert reserved_before > 0
+
+    crud.delete_customer(db, customer_id)
+    db.commit()
+
+    assert db.get(crud.models.Customer, customer_id) is None
+    assert db.get(crud.models.Quote, quote.quote_id) is None
+    assert db.get(crud.models.Order, order.order_id) is None
+    # reservations released too, not left dangling
+    assert sum(row["reserved"] for row in crud.material_balances(db)) == 0
+
+
+def test_delete_customer_does_not_touch_other_customers(db):
+    quote, order, _material = _confirmed_order_and_quote(db)
+    other_customer = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Real Customer Ltd"})
+    db.commit()
+
+    crud.delete_customer(db, order.customer_id)
+    db.commit()
+
+    assert db.get(crud.models.Customer, other_customer.customer_id) is not None

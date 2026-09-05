@@ -141,6 +141,31 @@ def save_customer(db: Session, values: dict, customer_id: int | None = None) -> 
     return customer
 
 
+def customer_delete_impact(db: Session, customer_id: int) -> dict:
+    """What deleting this customer would take with it — shown as a warning
+    before an admin confirms, so cascading isn't a surprise."""
+    quote_count = db.scalar(select(func.count()).select_from(models.Quote).where(models.Quote.customer_id == customer_id)) or 0
+    order_count = db.scalar(select(func.count()).select_from(models.Order).where(models.Order.customer_id == customer_id)) or 0
+    return {"quote_count": quote_count, "order_count": order_count}
+
+
+def delete_customer(db: Session, customer_id: int) -> None:
+    """Admin-only, same principle as delete_quote/delete_order — for
+    wiping out fake test customers created during the soft rollout. A
+    customer can't be deleted while quotes/orders reference it (that FK
+    is required, not nullable), so this cascades: deletes every quote and
+    order for this customer first (each of which already cleans up its
+    own items/reservations/deliveries), then the customer itself."""
+    for quote in list(db.scalars(select(models.Quote).where(models.Quote.customer_id == customer_id))):
+        delete_quote(db, quote.quote_id)
+    for order in list(db.scalars(select(models.Order).where(models.Order.customer_id == customer_id))):
+        delete_order(db, order.order_id)
+    customer = db.get(models.Customer, customer_id)
+    if customer:
+        db.delete(customer)
+        db.flush()
+
+
 def save_material(db: Session, values: dict, material_id: int | None = None) -> models.Material:
     if material_id:
         material = db.get(models.Material, material_id)

@@ -49,14 +49,22 @@
   <h2>All customers</h2>
   {% if customers %}
   <table>
-    <tr><th>Name</th><th>Type</th><th>Contact</th><th>Mobile</th><th>Terms</th></tr>
+    <tr><th>Name</th><th>Type</th><th>Contact</th><th>Mobile</th><th>Terms</th><th></th></tr>
     {% for c in customers %}
+    {% set impact = impacts.get(c.customer_id, {'quote_count': 0, 'order_count': 0}) %}
     <tr>
       <td>{{ c.display_name }}</td>
       <td>{{ c.customer_type }}</td>
       <td>{{ c.contact_name }}</td>
       <td>{{ c.mobile }}</td>
       <td>{{ c.payment_terms }}</td>
+      <td>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/customers/{{ c.customer_id }}/delete" onsubmit="return confirm('Permanently delete {{ c.display_name }}?{{ ' This will also delete ' ~ impact.quote_count ~ ' quote(s) and ' ~ impact.order_count ~ ' order(s) for this customer.' if (impact.quote_count + impact.order_count) > 0 else '' }} This cannot be undone.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </table>
