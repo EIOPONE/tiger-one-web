@@ -5,6 +5,7 @@ import asyncio
 import io
 import uuid
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -805,15 +806,44 @@ def timesheets_page(request: Request, driver_id: str = "", date_from: str = "", 
     date_from = date_from or (today - timedelta(days=7)).isoformat()
     date_to = date_to or today.isoformat()
     drivers = crud.list_drivers(db)
-    entries, summary = [], {}
+    entries, summary, tacho_records = [], {}, []
     selected_driver_id = int(driver_id) if driver_id else (drivers[0].user_id if drivers else None)
     if selected_driver_id:
         entries = crud.time_entries_for_driver(db, selected_driver_id, date_from, date_to)
         summary = crud.hours_summary(entries)
+        tacho_records = crud.tachograph_records_for_driver(db, selected_driver_id, date_from, date_to)
     return templates.TemplateResponse(request, "timesheets.html", {
         "user": user, "active": "timesheets", "drivers": drivers, "selected_driver_id": selected_driver_id,
         "date_from": date_from, "date_to": date_to, "entries": entries, "summary": summary,
+        "tacho_records": tacho_records, "vehicles": crud.list_vehicles(db),
+        "tacho_total": sum((r.driving_hours for r in tacho_records), Decimal("0")),
     })
+
+
+@app.post("/timesheets/tachograph")
+def timesheets_save_tachograph(
+    request: Request, driver_id: int = Form(...), record_date: str = Form(...),
+    driving_hours: str = Form(...), vehicle_id: str = Form(""), notes: str = Form(""),
+    source_reference: str = Form(""), db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_tachograph_record(
+        db, driver_id, date.fromisoformat(record_date), Decimal(driving_hours), user.full_name,
+        vehicle_id=int(vehicle_id) if vehicle_id else None, notes=notes, source_reference=source_reference,
+    )
+    return RedirectResponse(f"/timesheets?driver_id={driver_id}", status_code=303)
+
+
+@app.post("/timesheets/tachograph/{record_id}/delete")
+def timesheets_delete_tachograph(request: Request, record_id: int, driver_id: str = Form(""),
+                                  db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.delete_tachograph_record(db, record_id)
+    return RedirectResponse(f"/timesheets?driver_id={driver_id}" if driver_id else "/timesheets", status_code=303)
 
 
 # --- office notifications (delivery completed toast) -----------------------------------------

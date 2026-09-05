@@ -188,6 +188,17 @@ into software — this gives you the raw, accurate hour totals to check
 against whatever the real rules turn out to be, not a false sense of
 compliance from numbers I guessed at.
 
+**Two separate driving-hours records, on purpose**: since these vehicles
+are tachograph-regulated, the driver's live "Driving" clock-in (via QR)
+is an operational signal only — who was out driving, roughly when — not
+the compliance record. **/timesheets** has a distinct "Verified driving
+hours" section where office staff enter the actual figure from the
+tachograph chart/card after the shift, per driver per day. Re-entering
+the same driver+date updates that day's figure rather than creating a
+duplicate (tested for). This table is a searchable summary for reporting
+— it does not replace the legal obligation to retain the actual
+tachograph records themselves.
+
 How it works:
 
 - **/clock-points** (office) — add a named location (e.g. "Yard

@@ -112,3 +112,69 @@ def test_list_all_drivers_time_status(db):
     by_name = {s["driver"].full_name: s for s in status}
     assert by_name["Dan Driver"]["active_entry"] is not None
     assert by_name["Sam Driver"]["active_entry"] is None
+
+
+def test_save_tachograph_record_creates_and_reads_back(db):
+    from datetime import date as date_cls
+    from decimal import Decimal
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    crud.save_tachograph_record(
+        db, driver.user_id, date_cls(2026, 9, 1), Decimal("7.5"), "admin",
+        notes="Read from chart", source_reference="CARD-1234",
+    )
+    db.commit()
+
+    records = crud.tachograph_records_for_driver(db, driver.user_id, "2026-09-01", "2026-09-01")
+    assert len(records) == 1
+    assert records[0].driving_hours == Decimal("7.50")
+    assert records[0].source_reference == "CARD-1234"
+    assert records[0].entered_by == "admin"
+
+
+def test_save_tachograph_record_same_day_updates_not_duplicates(db):
+    """Re-entering the same driver+date (e.g. a correction) must update
+    the existing record, not create a second one for that day."""
+    from datetime import date as date_cls
+    from decimal import Decimal
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    crud.save_tachograph_record(db, driver.user_id, date_cls(2026, 9, 1), Decimal("7.0"), "admin")
+    db.commit()
+    crud.save_tachograph_record(db, driver.user_id, date_cls(2026, 9, 1), Decimal("7.5"), "admin",
+                                 notes="Corrected after re-checking chart")
+    db.commit()
+
+    records = crud.tachograph_records_for_driver(db, driver.user_id, "2026-09-01", "2026-09-01")
+    assert len(records) == 1
+    assert records[0].driving_hours == Decimal("7.50")
+    assert records[0].notes == "Corrected after re-checking chart"
+
+
+def test_delete_tachograph_record(db):
+    from datetime import date as date_cls
+    from decimal import Decimal
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+    record = crud.save_tachograph_record(db, driver.user_id, date_cls(2026, 9, 1), Decimal("7.5"), "admin")
+    db.commit()
+
+    crud.delete_tachograph_record(db, record.record_id)
+    db.commit()
+    assert crud.tachograph_records_for_driver(db, driver.user_id, "2026-09-01", "2026-09-01") == []
+
+
+def test_tachograph_records_are_per_driver(db):
+    """Verified hours entered for one driver must never show up under another."""
+    from datetime import date as date_cls
+    from decimal import Decimal
+    dan = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    sam = crud.create_driver(db, "Sam Driver", "sam", "1234")
+    db.commit()
+    crud.save_tachograph_record(db, dan.user_id, date_cls(2026, 9, 1), Decimal("7.5"), "admin")
+    db.commit()
+
+    assert len(crud.tachograph_records_for_driver(db, dan.user_id, "2026-09-01", "2026-09-01")) == 1
+    assert len(crud.tachograph_records_for_driver(db, sam.user_id, "2026-09-01", "2026-09-01")) == 0

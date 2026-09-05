@@ -414,3 +414,34 @@ class TimeEntry(Base):
         ),
     )
 
+
+class TachographRecord(Base):
+    """The authoritative driving-hours figure for a driver on a given day
+    — entered by office staff after reading the actual tachograph
+    (chart or digital card), not self-reported live by the driver. This
+    is what compliance reporting should be based on for the driving-hours
+    side; TimeEntry's own 'Driving' activity is a live operational signal
+    (who's out driving right now), not a substitute for this.
+
+    This table is a searchable summary for reporting convenience — it
+    does NOT replace the legal obligation to retain the actual tachograph
+    records (charts/digital data) themselves."""
+    __tablename__ = "tachograph_records"
+
+    record_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=False)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
+    record_date = Column(Date, nullable=False)
+    driving_hours = Column(Numeric(5, 2), nullable=False)
+    notes = Column(String, nullable=False, default="")
+    source_reference = Column(String, nullable=False, default="")  # e.g. tacho card/chart number, for audit trail
+    entered_by = Column(String, nullable=False, default="")
+    entered_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    driver = relationship("AppUser")
+    vehicle = relationship("Vehicle")
+
+    __table_args__ = (
+        UniqueConstraint("driver_user_id", "record_date", name="uq_tacho_driver_date"),
+    )
+

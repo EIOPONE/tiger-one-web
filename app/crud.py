@@ -1087,3 +1087,54 @@ def list_all_drivers_time_status(db: Session) -> list[dict]:
             "since": active.started_at if active else None,
         })
     return result
+
+
+# --- tachograph records (office-verified driving hours) --------------------------------
+
+def save_tachograph_record(
+    db: Session, driver_user_id: int, record_date, driving_hours, entered_by: str,
+    vehicle_id: int | None = None, notes: str = "", source_reference: str = "",
+) -> models.TachographRecord:
+    """One record per driver per day — re-entering the same date updates
+    it in place (e.g. a correction after re-checking the chart) rather
+    than creating a duplicate."""
+    existing = db.scalar(
+        select(models.TachographRecord).where(
+            models.TachographRecord.driver_user_id == driver_user_id,
+            models.TachographRecord.record_date == record_date,
+        )
+    )
+    if existing:
+        existing.driving_hours = driving_hours
+        existing.vehicle_id = vehicle_id
+        existing.notes = notes.strip()
+        existing.source_reference = source_reference.strip()
+        existing.entered_by = entered_by
+        db.flush()
+        return existing
+    record = models.TachographRecord(
+        driver_user_id=driver_user_id, vehicle_id=vehicle_id, record_date=record_date,
+        driving_hours=driving_hours, notes=notes.strip(), source_reference=source_reference.strip(),
+        entered_by=entered_by,
+    )
+    db.add(record)
+    db.flush()
+    return record
+
+
+def tachograph_records_for_driver(db: Session, driver_user_id: int, date_from: str, date_to: str) -> list[models.TachographRecord]:
+    start = datetime.fromisoformat(date_from).date()
+    end = datetime.fromisoformat(date_to).date()
+    return list(db.scalars(
+        select(models.TachographRecord)
+        .where(models.TachographRecord.driver_user_id == driver_user_id,
+               models.TachographRecord.record_date >= start, models.TachographRecord.record_date <= end)
+        .order_by(models.TachographRecord.record_date)
+    ))
+
+
+def delete_tachograph_record(db: Session, record_id: int) -> None:
+    record = db.get(models.TachographRecord, record_id)
+    if record:
+        db.delete(record)
+        db.flush()

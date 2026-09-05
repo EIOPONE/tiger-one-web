@@ -26,14 +26,56 @@
 
 {% if drivers %}
 <div class="kpis">
-  <div class="kpi"><div class="num">{{ summary.get('Driving', 0) }}</div><div class="label">Hours driving</div></div>
+  <div class="kpi"><div class="num">{{ summary.get('Driving', 0) }}</div><div class="label">Hours driving (live self-report)</div></div>
   <div class="kpi"><div class="num">{{ summary.get('Yard Work', 0) }}</div><div class="label">Hours yard work</div></div>
   <div class="kpi"><div class="num">{{ summary.get('Break', 0) }}</div><div class="label">Hours on break</div></div>
   <div class="kpi"><div class="num">{{ summary.get('Other', 0) }}</div><div class="label">Hours other duty</div></div>
+  <div class="kpi"><div class="num" style="color:var(--orange-dark);">{{ tacho_total }}</div><div class="label">Hours driving (tachograph, verified)</div></div>
+</div>
+
+<div class="card" style="border-color:#F3C6A6;background:#FFF8F4;">
+  <h2>Verified driving hours (from tachograph)</h2>
+  <p class="muted" style="font-size:13px;margin-top:-6px;">This is the authoritative record for driving-hours compliance — entered by the office after reading the actual tachograph chart or card. The "hours driving" figure above from live clock-ins is an operational signal (who was out driving), not a substitute for this.</p>
+  <form method="post" action="/timesheets/tachograph" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:10px;">
+    <input type="hidden" name="driver_id" value="{{ selected_driver_id }}">
+    <div><label for="record_date">Date</label><input type="date" id="record_date" name="record_date" required style="width:150px;"></div>
+    <div><label for="driving_hours">Driving hours</label><input type="number" step="0.25" id="driving_hours" name="driving_hours" required placeholder="e.g. 7.5" style="width:110px;"></div>
+    <div>
+      <label for="tacho_vehicle_id">Vehicle</label>
+      <select id="tacho_vehicle_id" name="vehicle_id" style="width:110px;">
+        <option value="">—</option>
+        {% for v in vehicles %}<option value="{{ v.vehicle_id }}">{{ v.registration }}</option>{% endfor %}
+      </select>
+    </div>
+    <div style="flex:1;min-width:160px;"><label for="source_reference">Card / chart ref</label><input type="text" id="source_reference" name="source_reference" placeholder="optional"></div>
+    <button class="btn btn-primary btn-small" type="submit">Save</button>
+  </form>
+  {% if tacho_records %}
+  <table style="margin-top:14px;">
+    <tr><th>Date</th><th class="right">Driving hours</th><th>Vehicle</th><th>Reference</th><th>Entered by</th><th></th></tr>
+    {% for r in tacho_records %}
+    <tr>
+      <td>{{ r.record_date }}</td>
+      <td class="right"><strong>{{ r.driving_hours }}</strong></td>
+      <td class="muted">{{ r.vehicle.registration if r.vehicle else '—' }}</td>
+      <td class="muted">{{ r.source_reference or '—' }}</td>
+      <td class="muted">{{ r.entered_by }}</td>
+      <td>
+        <form method="post" action="/timesheets/tachograph/{{ r.record_id }}/delete">
+          <input type="hidden" name="driver_id" value="{{ selected_driver_id }}">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No verified driving hours entered for this driver in this date range yet.</div>
+  {% endif %}
 </div>
 
 <div class="card">
-  <h2>{{ date_from }} to {{ date_to }}</h2>
+  <h2>{{ date_from }} to {{ date_to }} — live clock-in activity</h2>
   {% if entries %}
   <table>
     <tr><th>Activity</th><th>Started</th><th>Ended</th><th>Vehicle</th><th>Clock point</th></tr>
