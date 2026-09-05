@@ -167,6 +167,34 @@ without needing separate buttons for each.
 - Office sees everything submitted at **/vehicle-checks**, with any
   check that has a defect clearly flagged alongside the driver's notes.
 
+## Office staff logins and the Admin role
+
+Office staff no longer share one login — each person gets their own
+username and password.
+
+- **/staff** (Admin role only) — add a named office login: full name,
+  username, password, and a role (Sales, Commercial Manager, Office, or
+  Admin). Quotes and orders they create are attributed to their actual
+  name (`created_by`), not always "admin".
+- **Admin** is the one role with extra powers: managing staff accounts,
+  and permanently deleting quotes and orders (everyone else can only
+  change status — Draft, Accepted, Cancelled, etc). This exists
+  specifically for cleaning up test/demo data during a soft rollout
+  without it skewing real sales figures.
+- The original seeded `admin` / `tigerone` account is now the Admin
+  account — on upgrade, if that account already exists with its old role,
+  it's promoted to Admin automatically the next time the app starts, not
+  just on fresh installs.
+- Deleting a quote or order is a genuine hard delete, not a status change
+  — its line items and stock reservations are released automatically, and
+  for orders, any scheduled/completed deliveries (and their GPS pings) are
+  removed too, so nothing gets left orphaned in the database. If an order
+  had already been pushed to Xero as an invoice, deleting it here does
+  **not** touch or void that invoice in Xero — only the Tiger One record.
+- Permission checks happen on the server, not just by hiding buttons in
+  the UI — confirmed by testing that a non-Admin user's direct POST to a
+  delete endpoint is silently ignored, not just hidden from their screen.
+
 ## Driver logins, tracking and signed PODs
 
 Drivers get their own account, separate from office logins:

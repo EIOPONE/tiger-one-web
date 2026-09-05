@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Staff — Tiger One{% endblock %}
+{% block page_title %}Staff{% endblock %}
+{% block page_subtitle %}Office logins — each person gets their own username and password instead of sharing one.{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Add an office login</h2>
+  <form method="post" action="/staff/new">
+    <div class="grid-2">
+      <div><label for="full_name">Full name</label><input type="text" id="full_name" name="full_name" required></div>
+      <div><label for="username">Username</label><input type="text" id="username" name="username" required placeholder="e.g. sarah"></div>
+    </div>
+    <div class="grid-2">
+      <div><label for="password">Password</label><input type="text" id="password" name="password" required placeholder="they can change this later"></div>
+      <div>
+        <label for="role">Role</label>
+        <select id="role" name="role">
+          <option value="Sales">Sales</option>
+          <option value="Commercial Manager">Commercial Manager</option>
+          <option value="Office">Office</option>
+          <option value="Admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:2px;">Only the <strong>Admin</strong> role can manage staff accounts and delete quotes/orders — pick it deliberately, not by default.</p>
+    <button class="btn btn-primary" type="submit" style="margin-top:10px;">Add login</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All office staff</h2>
+  {% if staff %}
+  <table>
+    <tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr>
+    {% for s in staff %}
+    <tr>
+      <td>{{ s.full_name }}</td>
+      <td class="muted">{{ s.username }}</td>
+      <td>{% if s.role == 'Admin' %}<span class="pill pill-completed">Admin</span>{% else %}{{ s.role }}{% endif %}</td>
+      <td>
+        {% if s.user_id != user.user_id %}
+        <form method="post" action="/staff/{{ s.user_id }}/deactivate" onsubmit="return confirm('Remove {{ s.full_name }}\'s login? Their name stays on past quotes/orders they created.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+        {% else %}
+        <span class="muted" style="font-size:12px;">(you)</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No staff added yet.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

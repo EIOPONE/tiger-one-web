@@ -35,12 +35,40 @@ def money(value) -> Decimal:
 def ensure_admin_user(db: Session) -> None:
     existing = db.scalar(select(models.AppUser).where(models.AppUser.username == "admin"))
     if existing:
+        if existing.role != "Admin":
+            existing.role = "Admin"  # promotes the existing seeded account on upgrade, not just new installs
+            db.flush()
         return
     db.add(models.AppUser(
         username="admin", password_hash=hash_password("tigerone"),
-        full_name="Daniel Anderson", role="Commercial Manager",
+        full_name="Daniel Anderson", role="Admin",
     ))
     db.flush()
+
+
+def create_office_user(db: Session, full_name: str, username: str, password: str, role: str) -> models.AppUser:
+    user = models.AppUser(
+        username=username.strip().lower(), password_hash=hash_password(password),
+        full_name=full_name.strip(), role=role.strip() or "Office",
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def list_office_users(db: Session) -> list[models.AppUser]:
+    return list(db.scalars(
+        select(models.AppUser)
+        .where(models.AppUser.role != "Driver", models.AppUser.active.is_(True))
+        .order_by(models.AppUser.full_name)
+    ))
+
+
+def deactivate_office_user(db: Session, user_id: int) -> None:
+    user = db.get(models.AppUser, user_id)
+    if user:
+        user.active = False
+        db.flush()
 
 
 def create_driver(db: Session, full_name: str, username: str, pin: str) -> models.AppUser:
@@ -332,6 +360,17 @@ def set_quote_allocate_stock(db: Session, quote_id: int, allocate: bool) -> mode
     return quote
 
 
+def delete_quote(db: Session, quote_id: int) -> None:
+    """Admin-only, for cleaning up test/skewed data during the soft
+    rollout — a hard delete, not a status change. Items and reservations
+    cascade automatically; a quote that's already been converted to an
+    order is left alone (the order stands on its own either way)."""
+    quote = db.get(models.Quote, quote_id)
+    if quote:
+        db.delete(quote)
+        db.flush()
+
+
 # --- orders ------------------------------------------------------------------------
 
 def save_order(db: Session, header: dict, items: list[dict], username: str, order_id: int | None = None) -> models.Order:
@@ -422,6 +461,18 @@ def set_order_allocate_stock(db: Session, order_id: int, allocate: bool) -> mode
     db.flush()
     _rebuild_order_reservations(db, order)
     return order
+
+
+def delete_order(db: Session, order_id: int) -> None:
+    """Admin-only, same principle as delete_quote — a hard delete for
+    cleaning up test/skewed data. Items, reservations, deliveries and
+    their GPS pings all cascade automatically. Note: if this order was
+    already pushed to Xero as an invoice, deleting it here does NOT
+    remove or void that invoice in Xero — only the Tiger One record."""
+    order = db.get(models.Order, order_id)
+    if order:
+        db.delete(order)
+        db.flush()
 
 
 # --- stock -----------------------------------------------------------------------

@@ -77,6 +77,11 @@
           {% if q.status in ['Draft', 'Issued', 'Accepted'] %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Lost"><button class="btn btn-outline btn-small" type="submit">Lost</button></form>{% endif %}
         {% endif %}
         <a class="btn btn-outline btn-small" href="/quotes/{{ q.quote_id }}/pdf" target="_blank">PDF</a>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/quotes/{{ q.quote_id }}/delete" onsubmit="return confirm('Permanently delete quote {{ q.quote_number }}? This cannot be undone.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
+        </form>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}

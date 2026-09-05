@@ -268,6 +268,17 @@ def require_office_user(request: Request, db: Session):
     return user
 
 
+def require_admin_user(request: Request, db: Session):
+    """Admin-only actions — staff management and deleting quotes/orders.
+    Returns the user, or a RedirectResponse to send back instead."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    if user.role != "Admin":
+        return RedirectResponse("/", status_code=303)
+    return user
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard_page(request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
@@ -443,6 +454,15 @@ def quotes_allocate(request: Request, quote_id: int, allocate: str = Form(...), 
     return RedirectResponse("/quotes", status_code=303)
 
 
+@app.post("/quotes/{quote_id}/delete")
+def quotes_delete(request: Request, quote_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.delete_quote(db, quote_id)
+    return RedirectResponse("/quotes", status_code=303)
+
+
 @app.get("/quotes/{quote_id}/pdf")
 def quote_pdf_route(quote_id: int, request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
@@ -526,6 +546,15 @@ def orders_allocate(request: Request, order_id: int, allocate: str = Form(...), 
     return RedirectResponse("/orders", status_code=303)
 
 
+@app.post("/orders/{order_id}/delete")
+def orders_delete(request: Request, order_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.delete_order(db, order_id)
+    return RedirectResponse("/orders", status_code=303)
+
+
 @app.get("/orders/{order_id}/pdf")
 def order_pdf(order_id: int, request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
@@ -577,7 +606,41 @@ def orders_reassign_delivery(
     return RedirectResponse("/orders", status_code=303)
 
 
+# --- office staff accounts (Admin only) ---------------------------------------------------
+
+@app.get("/staff", response_class=HTMLResponse)
+def staff_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "staff.html", {
+        "user": user, "active": "staff", "staff": crud.list_office_users(db),
+    })
+
+
+@app.post("/staff/new")
+def staff_new(
+    request: Request, full_name: str = Form(...), username: str = Form(...),
+    password: str = Form(...), role: str = Form(...), db: Session = Depends(db_dependency),
+):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.create_office_user(db, full_name, username, password, role)
+    return RedirectResponse("/staff", status_code=303)
+
+
+@app.post("/staff/{staff_user_id}/deactivate")
+def staff_deactivate(request: Request, staff_user_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_office_user(db, staff_user_id)
+    return RedirectResponse("/staff", status_code=303)
+
+
 # --- drivers (office admin) ---------------------------------------------------------------
+
 
 @app.get("/drivers", response_class=HTMLResponse)
 def drivers_page(request: Request, db: Session = Depends(db_dependency)):

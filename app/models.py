@@ -216,7 +216,7 @@ class Order(Base):
     source_quote = relationship("Quote", back_populates="converted_orders")
     items = relationship("OrderItem", cascade="all, delete-orphan", backref="order")
     reservations = relationship("OrderMaterialReservation", cascade="all, delete-orphan", backref="order")
-    deliveries = relationship("Delivery", back_populates="order")
+    deliveries = relationship("Delivery", back_populates="order", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("status IN ('Draft','Confirmed','Completed','Cancelled')", name="ck_order_status"),
