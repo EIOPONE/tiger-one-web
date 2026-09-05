@@ -167,6 +167,49 @@ without needing separate buttons for each.
 - Office sees everything submitted at **/vehicle-checks**, with any
   check that has a defect clearly flagged alongside the driver's notes.
 
+## Driver hours — foundations
+
+Two genuinely different things, kept separate on purpose:
+
+- **Driving hours** — if your vehicles are tachograph-regulated (likely,
+  since volumetric mixers converged with standard HGV rules in 2018),
+  **the tachograph is the legal record**, not this app. What's built here
+  is a useful operational cross-check (when was someone actually driving,
+  which vehicle), not a substitute for a required tachograph.
+- **Working Time Directive** — covers *all* working time, including yard
+  work, not just driving. This is exactly what an app-based clock-in
+  system is well suited to track, and is the main point of what's here.
+
+Deliberately **not built**: any compliance limit checking or alerts (e.g.
+"approaching the 9-hour driving limit"). Which specific thresholds legally
+apply depends on vehicle type and exemptions that are genuinely worth
+confirming with a transport compliance advisor before they're hard-coded
+into software — this gives you the raw, accurate hour totals to check
+against whatever the real rules turn out to be, not a false sense of
+compliance from numbers I guessed at.
+
+How it works:
+
+- **/clock-points** (office) — add a named location (e.g. "Yard
+  Entrance"), then print its QR code (a real, scannable PNG — decoded
+  and verified during testing, not just visually checked). Stick it on
+  the wall.
+- A driver scans it with their phone's ordinary camera — no in-app
+  scanner needed, it just opens the browser. If they're not logged in
+  yet, they're sent to login first and land back on that exact clock
+  page afterwards, not just the dashboard.
+- They tap what they're starting: **Driving** (picks a vehicle),
+  **Yard Work**, **Break**, or **Other**. Starting something new
+  automatically closes whatever was open before — a driver is only ever
+  doing one thing at a time, so switching activity is just starting the
+  next one.
+- The driver dashboard shows a live "clocked in: X since HH:MM" banner,
+  plus a manual fallback link to the first clock point for testing or if
+  a driver forgets to scan.
+- Office sees a live "who's doing what right now" view on /clock-points,
+  and full history with hour totals by activity type at **/timesheets**
+  (date range, per driver).
+
 ## Office staff logins and the Admin role
 
 Office staff no longer share one login — each person gets their own

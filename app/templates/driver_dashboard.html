@@ -57,6 +57,16 @@
     </div>
     {% endif %}
 
+    {% if active_entry %}
+    <div style="display:flex;align-items:center;gap:10px;background:#FFF0E7;border:1px solid #F3C6A6;border-radius:14px;padding:12px 16px;margin-bottom:18px;color:var(--orange-dark);font-weight:700;font-size:14px;">
+      🕐 Clocked in: {{ active_entry.activity_type }}{% if active_entry.vehicle %} ({{ active_entry.vehicle.registration }}){% endif %} since {{ active_entry.started_at.strftime('%H:%M') }}
+    </div>
+    {% elif first_clock_point %}
+    <a href="/driver/clock/{{ first_clock_point.token }}" style="display:block;text-align:center;background:#EEF0F1;color:var(--ink);text-decoration:none;padding:12px;border-radius:12px;font-size:14px;font-weight:700;margin-bottom:18px;">
+      🕐 Not clocked in — tap to clock in
+    </a>
+    {% endif %}
+
     <h2>Your jobs</h2>
     {% if jobs %}
       {% for j in jobs %}

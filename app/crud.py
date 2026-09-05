@@ -978,3 +978,112 @@ def sync_vehicle_positions(db: Session, base_url: str, username: str, password: 
         updated += 1
     db.flush()
     return updated
+
+
+# --- driver hours: clock points + time entries -------------------------------------------
+
+ACTIVITY_TYPES = ("Driving", "Yard Work", "Break", "Other")
+
+
+def create_clock_point(db: Session, name: str) -> models.ClockPoint:
+    point = models.ClockPoint(name=name.strip(), token=new_access_token())
+    db.add(point)
+    db.flush()
+    return point
+
+
+def list_clock_points(db: Session) -> list[models.ClockPoint]:
+    return list(db.scalars(
+        select(models.ClockPoint).where(models.ClockPoint.active.is_(True)).order_by(models.ClockPoint.name)
+    ))
+
+
+def get_clock_point_by_token(db: Session, token: str) -> models.ClockPoint | None:
+    return db.scalar(select(models.ClockPoint).where(models.ClockPoint.token == token))
+
+
+def deactivate_clock_point(db: Session, clock_point_id: int) -> None:
+    point = db.get(models.ClockPoint, clock_point_id)
+    if point:
+        point.active = False
+        db.flush()
+
+
+def get_active_time_entry(db: Session, driver_user_id: int) -> models.TimeEntry | None:
+    return db.scalar(
+        select(models.TimeEntry)
+        .where(models.TimeEntry.driver_user_id == driver_user_id, models.TimeEntry.ended_at.is_(None))
+    )
+
+
+def start_activity(
+    db: Session, driver_user_id: int, activity_type: str,
+    clock_point_id: int | None = None, vehicle_id: int | None = None, source: str = "qr_scan",
+) -> models.TimeEntry:
+    """Closes whatever the driver was doing before (if anything) and opens
+    a new entry — a driver is only ever doing one thing at a time, so
+    switching activity is just starting the next one."""
+    if activity_type not in ACTIVITY_TYPES:
+        raise ValueError("Invalid activity type")
+    clock_out(db, driver_user_id)  # closes any currently-open entry first
+    entry = models.TimeEntry(
+        driver_user_id=driver_user_id, activity_type=activity_type,
+        clock_point_id=clock_point_id, vehicle_id=vehicle_id, source=source,
+    )
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+def clock_out(db: Session, driver_user_id: int) -> models.TimeEntry | None:
+    """Ends whatever the driver's currently clocked into, with nothing new
+    started. Harmless no-op if nothing was open."""
+    active = get_active_time_entry(db, driver_user_id)
+    if active:
+        active.ended_at = datetime.now(timezone.utc)
+        db.flush()
+    return active
+
+
+def time_entries_for_driver(db: Session, driver_user_id: int, date_from: str, date_to: str) -> list[models.TimeEntry]:
+    """date_from/date_to are 'YYYY-MM-DD' strings, inclusive, compared
+    against when each entry started."""
+    start = datetime.fromisoformat(date_from)
+    end = datetime.fromisoformat(date_to) + timedelta(days=1)
+    return list(db.scalars(
+        select(models.TimeEntry)
+        .where(models.TimeEntry.driver_user_id == driver_user_id,
+               models.TimeEntry.started_at >= start, models.TimeEntry.started_at < end)
+        .order_by(models.TimeEntry.started_at)
+    ))
+
+
+def hours_summary(entries: list[models.TimeEntry]) -> dict:
+    """Raw totals only, by activity type — deliberately no compliance
+    threshold checking here (see the module docstring in models.py):
+    which specific hour limits legally apply depends on vehicle type and
+    exemptions that need confirming, not something to hard-code blind."""
+    totals = {activity: timedelta() for activity in ACTIVITY_TYPES}
+    now = datetime.now(timezone.utc)
+    for entry in entries:
+        started = entry.started_at if entry.started_at.tzinfo else entry.started_at.replace(tzinfo=timezone.utc)
+        ended = entry.ended_at
+        if ended and not ended.tzinfo:
+            ended = ended.replace(tzinfo=timezone.utc)
+        duration = (ended or now) - started
+        totals[entry.activity_type] = totals.get(entry.activity_type, timedelta()) + duration
+    return {activity: round(td.total_seconds() / 3600, 2) for activity, td in totals.items()}
+
+
+def list_all_drivers_time_status(db: Session) -> list[dict]:
+    """Office overview — every driver and what they're currently clocked
+    into (or not), for a quick 'who's doing what right now' view."""
+    drivers = list_drivers(db)
+    result = []
+    for driver in drivers:
+        active = get_active_time_entry(db, driver.user_id)
+        result.append({
+            "driver": driver, "active_entry": active,
+            "since": active.started_at if active else None,
+        })
+    return result

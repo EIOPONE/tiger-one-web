@@ -368,3 +368,49 @@ class VehicleCheck(Base):
     __table_args__ = (
         UniqueConstraint("driver_user_id", "vehicle_id", "check_date", name="uq_check_driver_vehicle_date"),
     )
+
+
+class ClockPoint(Base):
+    """A physical location with a QR code posted on the wall — e.g. the
+    yard entrance. Scanning it takes a logged-in driver straight to the
+    clock in/out screen for that location."""
+    __tablename__ = "clock_points"
+
+    clock_point_id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)  # e.g. "Yard Entrance"
+    token = Column(String, nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class TimeEntry(Base):
+    """One block of a driver's day — driving, yard work, a break, or other
+    duty. Foundations for two separate things: DVSA/tachograph-style
+    driving-hours records (though the tachograph itself, not this, is the
+    legal record if one's required) and Working Time Directive tracking
+    (which covers ALL working time, including yard work — this app-based
+    log is a legitimate way to capture that side).
+
+    Starting a new entry automatically closes whatever was open before it
+    — a driver is only ever doing one thing at a time."""
+    __tablename__ = "time_entries"
+
+    entry_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=False)
+    activity_type = Column(String, nullable=False)  # Driving | Yard Work | Break | Other
+    vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
+    clock_point_id = Column(Integer, ForeignKey("clock_points.clock_point_id"), nullable=True)
+    source = Column(String, nullable=False, default="qr_scan")  # qr_scan | manual
+    started_at = Column(DateTime, nullable=False, server_default=func.now())
+    ended_at = Column(DateTime, nullable=True)  # NULL while this entry is still active
+
+    driver = relationship("AppUser")
+    vehicle = relationship("Vehicle")
+    clock_point = relationship("ClockPoint")
+
+    __table_args__ = (
+        CheckConstraint(
+            "activity_type IN ('Driving','Yard Work','Break','Other')", name="ck_time_entry_activity_type"
+        ),
+    )
+

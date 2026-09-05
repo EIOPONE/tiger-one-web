@@ -8,6 +8,7 @@ itsdangerous==2.2.0
 jinja2==3.1.4
 reportlab==4.4.10
 staticmap==0.5.7
+qrcode==8.2
 requests==2.33.1
 pytest==8.3.2
 

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Clock Points — Tiger One{% endblock %}
+{% block page_title %}Clock points{% endblock %}
+{% block page_subtitle %}QR codes for drivers to clock in/out — print one per location and stick it on the wall.{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Right now</h2>
+  {% if drivers_status %}
+  <table>
+    <tr><th>Driver</th><th>Status</th></tr>
+    {% for d in drivers_status %}
+    <tr>
+      <td>{{ d.driver.full_name }}</td>
+      <td>
+        {% if d.active_entry %}
+          <span class="pill pill-completed">{{ d.active_entry.activity_type }}{% if d.active_entry.vehicle %} — {{ d.active_entry.vehicle.registration }}{% endif %} since {{ d.since.strftime('%H:%M') }}</span>
+        {% else %}
+          <span class="muted">Not clocked in</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No drivers added yet.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Add a clock point</h2>
+  <form method="post" action="/clock-points/new">
+    <label for="name">Location name</label>
+    <input type="text" id="name" name="name" required placeholder="e.g. Yard Entrance">
+    <button class="btn btn-primary" type="submit" style="margin-top:10px;">Add clock point</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All clock points</h2>
+  {% if clock_points %}
+  <table>
+    <tr><th>Location</th><th>QR code</th><th></th></tr>
+    {% for c in clock_points %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td><a class="btn btn-outline btn-small" href="/clock-points/{{ c.clock_point_id }}/qr.png" target="_blank">View / print QR</a></td>
+      <td>
+        <form method="post" action="/clock-points/{{ c.clock_point_id }}/deactivate" onsubmit="return confirm('Remove {{ c.name }}? The printed QR code will stop working.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No clock points yet — add the first one above (e.g. "Yard Entrance"), then print its QR code.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

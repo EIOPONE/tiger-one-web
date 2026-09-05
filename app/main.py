@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import io
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -745,6 +746,76 @@ def vehicle_checks_page(request: Request, db: Session = Depends(db_dependency)):
     })
 
 
+# --- clock points + timesheets (office admin) -----------------------------------------------
+
+@app.get("/clock-points", response_class=HTMLResponse)
+def clock_points_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "clock_points.html", {
+        "user": user, "active": "clock-points", "clock_points": crud.list_clock_points(db),
+        "drivers_status": crud.list_all_drivers_time_status(db),
+    })
+
+
+@app.post("/clock-points/new")
+def clock_points_new(request: Request, name: str = Form(...), db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.create_clock_point(db, name)
+    return RedirectResponse("/clock-points", status_code=303)
+
+
+@app.post("/clock-points/{clock_point_id}/deactivate")
+def clock_points_deactivate(request: Request, clock_point_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_clock_point(db, clock_point_id)
+    return RedirectResponse("/clock-points", status_code=303)
+
+
+@app.get("/clock-points/{clock_point_id}/qr.png")
+def clock_points_qr(request: Request, clock_point_id: int, db: Session = Depends(db_dependency)):
+    """The printable QR code — points at /driver/clock/{token}. A driver's
+    phone camera reads this straight into the browser, no app needed."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    point = db.get(models.ClockPoint, clock_point_id)
+    if not point:
+        raise HTTPException(status_code=404, detail="Clock point not found")
+    import qrcode
+    clock_url = str(request.base_url).rstrip("/") + f"/driver/clock/{point.token}"
+    img = qrcode.make(clock_url, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.get("/timesheets", response_class=HTMLResponse)
+def timesheets_page(request: Request, driver_id: str = "", date_from: str = "", date_to: str = "",
+                     db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    today = date.today()
+    date_from = date_from or (today - timedelta(days=7)).isoformat()
+    date_to = date_to or today.isoformat()
+    drivers = crud.list_drivers(db)
+    entries, summary = [], {}
+    selected_driver_id = int(driver_id) if driver_id else (drivers[0].user_id if drivers else None)
+    if selected_driver_id:
+        entries = crud.time_entries_for_driver(db, selected_driver_id, date_from, date_to)
+        summary = crud.hours_summary(entries)
+    return templates.TemplateResponse(request, "timesheets.html", {
+        "user": user, "active": "timesheets", "drivers": drivers, "selected_driver_id": selected_driver_id,
+        "date_from": date_from, "date_to": date_to, "entries": entries, "summary": summary,
+    })
+
+
 # --- office notifications (delivery completed toast) -----------------------------------------
 
 @app.get("/api/notifications/deliveries-since")
@@ -872,25 +943,29 @@ def xero_disconnect(request: Request, db: Session = Depends(db_dependency)):
 
 
 @app.get("/driver/login", response_class=HTMLResponse)
-def driver_login_page(request: Request, db: Session = Depends(db_dependency)):
+def driver_login_page(request: Request, next: str = "", db: Session = Depends(db_dependency)):
     user = get_user_or_none(request, db)
     if user:
-        return RedirectResponse("/driver" if user.role == "Driver" else "/", status_code=303)
+        safe_next = next if next.startswith("/driver/") else "/driver"
+        return RedirectResponse(safe_next if user.role == "Driver" else "/", status_code=303)
     return templates.TemplateResponse(request, "driver_login.html", {
-        "user": None, "drivers": crud.list_drivers(db),
+        "user": None, "drivers": crud.list_drivers(db), "next": next,
     })
 
 
 @app.post("/driver/login")
 def driver_login_submit(request: Request, username: str = Form(...), pin: str = Form(...),
-                         db: Session = Depends(db_dependency)):
+                         next: str = Form(""), db: Session = Depends(db_dependency)):
     user = crud.authenticate(db, username, pin)
     if not user or user.role != "Driver":
         return templates.TemplateResponse(request, "driver_login.html", {
-            "user": None, "drivers": crud.list_drivers(db), "error": "Incorrect PIN — try again",
+            "user": None, "drivers": crud.list_drivers(db), "error": "Incorrect PIN — try again", "next": next,
         }, status_code=401)
     token = signer.dumps({"user_id": user.user_id})
-    response = RedirectResponse("/driver", status_code=303)
+    # Only ever redirect within our own /driver/... routes — never follow an
+    # arbitrary external "next" value from a URL.
+    destination = next if next.startswith("/driver/") else "/driver"
+    response = RedirectResponse(destination, status_code=303)
     response.set_cookie("session", token, httponly=True, samesite="lax")
     return response
 
@@ -900,10 +975,57 @@ def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
     user = get_user_or_none(request, db)
     if not user:
         return RedirectResponse("/driver/login", status_code=303)
+    clock_points = crud.list_clock_points(db)
     return templates.TemplateResponse(request, "driver_dashboard.html", {
         "user": user, "jobs": crud.deliveries_for_driver(db, user.user_id),
         "checked_in_today": crud.driver_has_checked_in_today(db, user.user_id),
+        "active_entry": crud.get_active_time_entry(db, user.user_id),
+        "first_clock_point": clock_points[0] if clock_points else None,
     })
+
+
+# --- driver hours: clock in/out via QR scan --------------------------------------------
+
+@app.get("/driver/clock/{token}", response_class=HTMLResponse)
+def driver_clock_page(token: str, request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        # Bounce to login, then straight back to this exact QR link once signed in.
+        return RedirectResponse(f"/driver/login?next=/driver/clock/{token}", status_code=303)
+    point = crud.get_clock_point_by_token(db, token)
+    if not point:
+        raise HTTPException(status_code=404, detail="This clock-in code isn't recognised — check with the office.")
+    return templates.TemplateResponse(request, "driver_clock.html", {
+        "user": user, "clock_point": point, "vehicles": crud.list_vehicles(db),
+        "active_entry": crud.get_active_time_entry(db, user.user_id),
+    })
+
+
+@app.post("/driver/clock/{token}/start")
+def driver_clock_start(
+    token: str, request: Request, activity_type: str = Form(...), vehicle_id: str = Form(""),
+    db: Session = Depends(db_dependency),
+):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    point = crud.get_clock_point_by_token(db, token)
+    if not point:
+        raise HTTPException(status_code=404, detail="Clock point not found")
+    crud.start_activity(
+        db, user.user_id, activity_type, clock_point_id=point.clock_point_id,
+        vehicle_id=int(vehicle_id) if vehicle_id else None, source="qr_scan",
+    )
+    return RedirectResponse("/driver", status_code=303)
+
+
+@app.post("/driver/clock/{token}/out")
+def driver_clock_out(token: str, request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    crud.clock_out(db, user.user_id)
+    return RedirectResponse("/driver", status_code=303)
 
 
 # --- driver vehicle check (daily walkaround, DVSA-style) ---------------------------------

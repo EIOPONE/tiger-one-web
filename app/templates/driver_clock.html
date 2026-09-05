@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clock in — Tiger One</title>
+  <style>
+    :root { --orange:#E3783E; --orange-dark:#B65321; --ink:#17191C; --line:#DFE2E4; --muted:#70757C; --surface:#F4F5F5; --green:#247A52; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--surface); color: var(--ink); }
+    header { background: var(--ink); color: #fff; padding: 18px 20px; }
+    header h1 { margin: 0; font-size: 18px; }
+    header p { margin: 4px 0 0; color: #cfd2d5; font-size: 14px; }
+    .tabbar { position: sticky; top: 0; z-index: 20; display: flex; background: #fff; border-bottom: 1px solid var(--line); }
+    .tabbar a, .tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; text-decoration: none; color: var(--muted); font-size: 11px; font-weight: 700; background: none; border: 0; margin: 0; }
+    .tabbar .icon { font-size: 19px; }
+    main { max-width: 480px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+    .status { display: flex; align-items: center; gap: 10px; background: #E7F3ED; border: 1px solid #BEE3CE; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; color: var(--green); font-weight: 700; font-size: 14px; }
+    .activity-btn { display: flex; align-items: center; gap: 14px; width: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 12px; }
+    .activity-btn .emoji { font-size: 24px; }
+    .activity-btn.driving { border-color: var(--orange); }
+    select { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 16px; margin-bottom: 12px; }
+    .clockout-btn { width: 100%; padding: 16px; border: 0; border-radius: 12px; background: var(--ink); color: #fff; font-size: 15px; font-weight: 700; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📍 {{ clock_point.name }}</h1>
+    <p>{{ user.full_name }}</p>
+  </header>
+  <nav class="tabbar">
+    <a href="/driver"><span class="icon">🏠</span>Home</a>
+    <a href="/driver/vehicle-check"><span class="icon">📋</span>Vehicle Check</a>
+    <form method="post" action="/web-logout"><button type="submit"><span class="icon">🔒</span>Log out</button></form>
+  </nav>
+  <main>
+    {% if active_entry %}
+    <div class="status">✅ Currently clocked into: {{ active_entry.activity_type }}{% if active_entry.vehicle %} ({{ active_entry.vehicle.registration }}){% endif %} since {{ active_entry.started_at.strftime('%H:%M') }}</div>
+    {% endif %}
+
+    <div class="card">
+      <p style="margin:0 0 14px;color:var(--muted);font-size:14px;">What are you starting?</p>
+
+      <form method="post" action="/driver/clock/{{ clock_point.token }}/start">
+        <input type="hidden" name="activity_type" value="Driving">
+        <select name="vehicle_id" required>
+          <option value="" disabled selected>Which vehicle?</option>
+          {% for v in vehicles %}<option value="{{ v.vehicle_id }}">{{ v.registration }}{% if v.description %} — {{ v.description }}{% endif %}</option>{% endfor %}
+        </select>
+        <button class="activity-btn driving" type="submit"><span class="emoji">🚛</span>Start Driving</button>
+      </form>
+
+      <form method="post" action="/driver/clock/{{ clock_point.token }}/start">
+        <input type="hidden" name="activity_type" value="Yard Work">
+        <button class="activity-btn" type="submit"><span class="emoji">🏗️</span>Start Yard Work</button>
+      </form>
+
+      <form method="post" action="/driver/clock/{{ clock_point.token }}/start">
+        <input type="hidden" name="activity_type" value="Break">
+        <button class="activity-btn" type="submit"><span class="emoji">☕</span>Start Break</button>
+      </form>
+
+      <form method="post" action="/driver/clock/{{ clock_point.token }}/start">
+        <input type="hidden" name="activity_type" value="Other">
+        <button class="activity-btn" type="submit"><span class="emoji">📝</span>Other Duty</button>
+      </form>
+
+      {% if active_entry %}
+      <form method="post" action="/driver/clock/{{ clock_point.token }}/out">
+        <button class="clockout-btn" type="submit">⏹ Clock Out for the Day</button>
+      </form>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>
