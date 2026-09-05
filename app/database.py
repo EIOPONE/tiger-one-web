@@ -48,6 +48,7 @@ _LIGHT_MIGRATIONS = [
     "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_latitude NUMERIC(9,6)",
     "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude NUMERIC(9,6)",
     "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_at TIMESTAMP",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS qr_token VARCHAR",
 ]
 
 

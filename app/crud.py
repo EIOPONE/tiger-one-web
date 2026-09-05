@@ -652,7 +652,7 @@ def save_vehicle(
     else:
         vehicle = models.Vehicle(
             registration=registration.strip().upper(), description=description.strip(),
-            traccar_device_id=traccar_device_id.strip() or None,
+            traccar_device_id=traccar_device_id.strip() or None, qr_token=new_access_token(),
         )
         db.add(vehicle)
     db.flush()
@@ -670,6 +670,52 @@ def deactivate_vehicle(db: Session, vehicle_id: int) -> None:
     if vehicle:
         vehicle.active = False
         db.flush()
+
+
+def backfill_vehicle_qr_tokens(db: Session) -> None:
+    """Called on every app startup (cheap no-op once done) — gives a QR
+    token to any vehicle that doesn't have one yet, so vehicles created
+    before this feature existed still get a working cab QR code without
+    needing a manual fix-up step."""
+    vehicles = list(db.scalars(select(models.Vehicle).where(models.Vehicle.qr_token.is_(None))))
+    for vehicle in vehicles:
+        vehicle.qr_token = new_access_token()
+    if vehicles:
+        db.flush()
+
+
+def get_vehicle_by_qr_token(db: Session, token: str) -> models.Vehicle | None:
+    return db.scalar(select(models.Vehicle).where(models.Vehicle.qr_token == token))
+
+
+def get_active_driver_for_vehicle(db: Session, vehicle_id: int) -> models.TimeEntry | None:
+    """Who's currently driving this vehicle, if anyone — derived straight
+    from the live TimeEntry data rather than a separate assignment table,
+    so there's only ever one source of truth for 'who's driving what'."""
+    return db.scalar(
+        select(models.TimeEntry).where(
+            models.TimeEntry.vehicle_id == vehicle_id, models.TimeEntry.activity_type == "Driving",
+            models.TimeEntry.ended_at.is_(None),
+        )
+    )
+
+
+def start_driving_vehicle(
+    db: Session, driver_user_id: int, vehicle_id: int, clock_point_id: int | None = None,
+) -> models.TimeEntry:
+    """The cab-QR scan flow. Closes whatever the scanning driver was doing
+    before (same as start_activity), AND — this is the important bit for
+    a last-minute driver swap — closes anyone ELSE's still-open 'Driving'
+    entry for this same vehicle first, so a handover never leaves two
+    drivers appearing to drive the same truck at once."""
+    other_active = get_active_driver_for_vehicle(db, vehicle_id)
+    if other_active and other_active.driver_user_id != driver_user_id:
+        other_active.ended_at = datetime.now(timezone.utc)
+        db.flush()
+    return start_activity(
+        db, driver_user_id, "Driving", clock_point_id=clock_point_id,
+        vehicle_id=vehicle_id, source="qr_scan_vehicle",
+    )
 
 
 def deliveries_for_driver(db: Session, driver_user_id: int, include_delivered: bool = False) -> list[models.Delivery]:

@@ -45,6 +45,7 @@ def on_startup():
     init_db()
     with get_session() as db:
         crud.ensure_admin_user(db)
+        crud.backfill_vehicle_qr_tokens(db)
     if TRACCAR_URL and TRACCAR_USERNAME and TRACCAR_PASSWORD:
         asyncio.create_task(_traccar_poll_loop())
 
@@ -682,9 +683,28 @@ def vehicles_page(request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
+    vehicles = crud.list_vehicles(db)
+    current_drivers = {v.vehicle_id: crud.get_active_driver_for_vehicle(db, v.vehicle_id) for v in vehicles}
     return templates.TemplateResponse(request, "vehicles.html", {
-        "user": user, "active": "vehicles", "vehicles": crud.list_vehicles(db),
+        "user": user, "active": "vehicles", "vehicles": vehicles, "current_drivers": current_drivers,
     })
+
+
+@app.get("/vehicles/{vehicle_id}/qr.png")
+def vehicles_qr(request: Request, vehicle_id: int, db: Session = Depends(db_dependency)):
+    """The cab QR code — points at /driver/clock/vehicle/{token}."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    vehicle = db.get(models.Vehicle, vehicle_id)
+    if not vehicle or not vehicle.qr_token:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    import qrcode
+    clock_url = str(request.base_url).rstrip("/") + f"/driver/clock/vehicle/{vehicle.qr_token}"
+    img = qrcode.make(clock_url, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @app.get("/vehicles/map", response_class=HTMLResponse)
@@ -1055,6 +1075,48 @@ def driver_clock_out(token: str, request: Request, db: Session = Depends(db_depe
     if not user:
         return RedirectResponse("/driver/login", status_code=303)
     crud.clock_out(db, user.user_id)
+    return RedirectResponse("/driver", status_code=303)
+
+
+# --- driver hours: cab QR scan (per-vehicle, handles driver handover) -------------------
+
+@app.get("/driver/clock/vehicle/{token}", response_class=HTMLResponse)
+def driver_vehicle_clock_page(token: str, request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse(f"/driver/login?next=/driver/clock/vehicle/{token}", status_code=303)
+    vehicle = crud.get_vehicle_by_qr_token(db, token)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="This vehicle's QR code isn't recognised — check with the office.")
+    current_driver_entry = crud.get_active_driver_for_vehicle(db, vehicle.vehicle_id)
+    return templates.TemplateResponse(request, "driver_vehicle_clock.html", {
+        "user": user, "vehicle": vehicle, "current_driver_entry": current_driver_entry,
+        "is_already_driving_this": bool(current_driver_entry and current_driver_entry.driver_user_id == user.user_id),
+    })
+
+
+@app.post("/driver/clock/vehicle/{token}/start")
+def driver_vehicle_clock_start(token: str, request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    vehicle = crud.get_vehicle_by_qr_token(db, token)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    crud.start_driving_vehicle(db, user.user_id, vehicle.vehicle_id)
+    return RedirectResponse("/driver", status_code=303)
+
+
+@app.post("/driver/clock/vehicle/{token}/other")
+def driver_vehicle_clock_other(token: str, request: Request, activity_type: str = Form(...),
+                                db: Session = Depends(db_dependency)):
+    """From the cab-QR page's secondary options — Yard Work / Break / Other
+    instead of driving (e.g. scanned by mistake, or doing something else
+    near the vehicle)."""
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    crud.start_activity(db, user.user_id, activity_type)
     return RedirectResponse("/driver", status_code=303)
 
 

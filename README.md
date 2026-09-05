@@ -205,6 +205,15 @@ How it works:
   Entrance"), then print its QR code (a real, scannable PNG — decoded
   and verified during testing, not just visually checked). Stick it on
   the wall.
+- **Vehicles also get their own QR code** (`/vehicles`, "Print QR" per
+  vehicle) — for one in the cab. Scanning it is a single tap: "Start
+  Driving TC01", no vehicle picker needed since the QR already says
+  which truck. If someone else is currently showing as driving that
+  vehicle, starting hands it over automatically — their entry closes,
+  yours opens, so a last-minute driver swap just works by scanning
+  rather than needing anyone to update anything by hand. This was
+  specifically tested with two real drivers and a real handover, not
+  just the crud logic in isolation.
 - A driver scans it with their phone's ordinary camera — no in-app
   scanner needed, it just opens the browser. If they're not logged in
   yet, they're sent to login first and land back on that exact clock

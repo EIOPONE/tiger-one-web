@@ -340,6 +340,12 @@ class Vehicle(Base):
     last_latitude = Column(Numeric(9, 6), nullable=True)
     last_longitude = Column(Numeric(9, 6), nullable=True)
     last_position_at = Column(DateTime, nullable=True)
+    # A QR code for inside the cab — scanning it clocks whoever scans it in
+    # as "Driving" this vehicle, and automatically hands over from anyone
+    # else who was previously driving it. Nullable so existing vehicles
+    # (from before this feature) get backfilled with one on startup rather
+    # than needing a migration to force a value.
+    qr_token = Column(String, nullable=True, unique=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 

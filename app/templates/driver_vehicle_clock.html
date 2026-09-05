@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ vehicle.registration }} — Tiger One</title>
+  <style>
+    :root { --orange:#E3783E; --orange-dark:#B65321; --ink:#17191C; --line:#DFE2E4; --muted:#70757C; --surface:#F4F5F5; --green:#247A52; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--surface); color: var(--ink); }
+    header { background: var(--ink); color: #fff; padding: 24px 20px; text-align: center; }
+    header .reg { font-size: 26px; font-weight: 800; letter-spacing: .04em; }
+    header p { margin: 4px 0 0; color: #cfd2d5; font-size: 14px; }
+    main { max-width: 440px; margin: 0 auto; padding: 20px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; text-align: center; }
+    .handover-note { background: #FFF0E7; border: 1px solid #F3C6A6; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: var(--orange-dark); text-align: center; }
+    .already-note { background: #E7F3ED; border: 1px solid #BEE3CE; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; color: var(--green); font-weight: 700; text-align: center; }
+    .drive-btn { width: 100%; padding: 26px; border: 0; border-radius: 16px; background: var(--orange); color: #fff; font-size: 20px; font-weight: 800; }
+    .drive-btn .emoji { display: block; font-size: 36px; margin-bottom: 8px; }
+    .secondary-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; font-weight: 700; margin: 22px 4px 10px; text-align: center; }
+    .secondary-btn { display: block; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+    .home-link { display: block; text-align: center; margin-top: 20px; color: var(--muted); font-size: 13px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="reg">🚛 {{ vehicle.registration }}</div>
+    {% if vehicle.description %}<p>{{ vehicle.description }}</p>{% endif %}
+  </header>
+  <main>
+    {% if is_already_driving_this %}
+    <div class="already-note">✅ You're already driving this vehicle</div>
+    <form method="post" action="/driver/clock/vehicle/{{ vehicle.qr_token }}/other">
+      <input type="hidden" name="activity_type" value="Break">
+      <button class="secondary-btn" type="submit">☕ Take a break</button>
+    </form>
+    {% else %}
+      {% if current_driver_entry %}
+      <div class="handover-note">⚠️ Currently showing as driven by {{ current_driver_entry.driver.full_name }} — starting will hand it over to you and clock them out of it automatically.</div>
+      {% endif %}
+      <form method="post" action="/driver/clock/vehicle/{{ vehicle.qr_token }}/start">
+        <button class="drive-btn" type="submit"><span class="emoji">🚛</span>Start Driving {{ vehicle.registration }}</button>
+      </form>
+
+      <div class="secondary-title">Not driving right now?</div>
+      <form method="post" action="/driver/clock/vehicle/{{ vehicle.qr_token }}/other">
+        <input type="hidden" name="activity_type" value="Yard Work">
+        <button class="secondary-btn" type="submit">🏗️ Yard Work</button>
+      </form>
+      <form method="post" action="/driver/clock/vehicle/{{ vehicle.qr_token }}/other">
+        <input type="hidden" name="activity_type" value="Other">
+        <button class="secondary-btn" type="submit">📝 Other Duty</button>
+      </form>
+    {% endif %}
+
+    <a class="home-link" href="/driver">← Back to my jobs</a>
+  </main>
+</body>
+</html>

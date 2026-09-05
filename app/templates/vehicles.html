@@ -22,11 +22,20 @@
   <h2>Fleet</h2>
   {% if vehicles %}
   <table>
-    <tr><th>Registration</th><th>Description</th><th>Live tracking</th><th></th></tr>
+    <tr><th>Registration</th><th>Description</th><th>Cab QR</th><th>Currently driven by</th><th>Live tracking</th><th></th></tr>
     {% for v in vehicles %}
     <tr>
       <td>{{ v.registration }}</td>
       <td class="muted">{{ v.description }}</td>
+      <td><a class="btn btn-outline btn-small" href="/vehicles/{{ v.vehicle_id }}/qr.png" target="_blank">Print QR</a></td>
+      <td>
+        {% set driving = current_drivers.get(v.vehicle_id) %}
+        {% if driving %}
+          <span class="pill pill-completed">{{ driving.driver.full_name }} since {{ driving.started_at.strftime('%H:%M') }}</span>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
       <td>
         {% if not v.traccar_device_id %}
           <span class="muted">Not linked to Traccar</span>
