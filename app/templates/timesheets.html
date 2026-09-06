@@ -32,6 +32,18 @@
   <div class="kpi"><div class="num">{{ totals.get('holiday_days', 0) }}</div><div class="label">Holiday days (0 hrs, excluded from WTD)</div></div>
 </div>
 
+<div class="card" style="border-color:#DFE2E4;background:#F4F5F5;">
+  <h2>Add or correct a shift</h2>
+  <p class="muted" style="font-size:13px;margin-top:-6px;">For a driver who forgot to clock in and/or out. Replaces that day's clock record entirely — use this when there's nothing there, or when what's there is wrong.</p>
+  <form method="post" action="/timesheets/manual-entry" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:10px;">
+    <input type="hidden" name="driver_id" value="{{ selected_driver_id }}">
+    <div><label for="entry_date">Date</label><input type="date" id="entry_date" name="entry_date" required style="width:150px;"></div>
+    <div><label for="clock_in">Clock in</label><input type="time" id="clock_in" name="clock_in" required style="width:120px;"></div>
+    <div><label for="clock_out">Clock out</label><input type="time" id="clock_out" name="clock_out" required style="width:120px;"></div>
+    <button class="btn btn-primary btn-small" type="submit">Save</button>
+  </form>
+</div>
+
 <div class="card" style="border-color:#F3C6A6;background:#FFF8F4;">
   <h2>Mark a holiday</h2>
   <p class="muted" style="font-size:13px;margin-top:-6px;">Adds a HOLIDAY day at zero hours for this driver — they won't be clocking in, so the office logs it directly instead of a shift being invented for it.</p>
@@ -104,7 +116,7 @@
   <h2>{{ date_from }} to {{ date_to }} — daily timesheet</h2>
   {% if days %}
   <table>
-    <tr><th>Date</th><th>Clock in</th><th>Clock out</th><th class="right">Hours worked</th><th class="right">Driving hours</th></tr>
+    <tr><th>Date</th><th>Clock in</th><th>Clock out</th><th class="right">Hours worked</th><th class="right">Driving hours</th><th></th></tr>
     {% for day in days %}
     <tr {% if day.is_holiday %}style="background:#FFF0E7;"{% endif %}>
       <td>{{ day.date.strftime('%a %d %b') }}</td>
@@ -113,13 +125,22 @@
       <td class="muted">—</td>
       <td class="right">0.00</td>
       <td class="right">0.00</td>
+      <td></td>
       {% elif day.worked %}
       <td>{{ day.clock_in.strftime('%H:%M') if day.clock_in else '—' }}</td>
       <td>{% if day.clock_out %}{{ day.clock_out.strftime('%H:%M') }}{% else %}<span class="muted">still clocked in</span>{% endif %}</td>
-      <td class="right"><strong>{{ "%.2f"|format(day.hours_worked) }}</strong></td>
+      <td class="right"><strong>{{ "%.2f"|format(day.hours_worked) }}</strong>{% if day.is_manual %} <span class="muted" style="font-size:11px;">(corrected)</span>{% endif %}</td>
       <td class="right">{{ "%.2f"|format(day.driving_hours) }}</td>
+      <td>
+        {% if day.entry_id %}
+        <form method="post" action="/timesheets/entry/{{ day.entry_id }}/delete" onsubmit="return confirm('Remove this day\'s shift entirely?');">
+          <input type="hidden" name="driver_id" value="{{ selected_driver_id }}">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+        {% endif %}
+      </td>
       {% else %}
-      <td class="muted">—</td><td class="muted">—</td><td class="right muted">—</td><td class="right muted">—</td>
+      <td class="muted">—</td><td class="muted">—</td><td class="right muted">—</td><td class="right muted">—</td><td></td>
       {% endif %}
     </tr>
     {% endfor %}
@@ -127,6 +148,7 @@
       <td colspan="3"><strong>TOTAL</strong></td>
       <td class="right"><strong>{{ totals.get('total_hours_worked', 0) }}</strong></td>
       <td class="right"><strong>{{ totals.get('total_driving_hours', 0) }}</strong></td>
+      <td></td>
     </tr>
   </table>
   {% else %}

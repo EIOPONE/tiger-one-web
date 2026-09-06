@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime, timedelta, timezone
+from datetime import time as dt_time
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func, select
@@ -1090,6 +1091,48 @@ def finish_work(db: Session, driver_user_id: int, driving_hours) -> models.TimeE
     return clock_out(db, driver_user_id)
 
 
+def add_manual_time_entry(
+    db: Session, driver_user_id: int, entry_date, clock_in_time, clock_out_time, added_by: str,
+) -> models.TimeEntry:
+    """Office correction for a driver who forgot to clock in and/or out —
+    same 'one clean record per day' principle as holidays and tachograph
+    entries. Replaces any existing entries for that date first (whether a
+    partial forgotten scan or a previous correction), so this becomes the
+    single authoritative record for the day rather than double-counting
+    alongside whatever was already there."""
+    start = datetime.combine(entry_date, clock_in_time, tzinfo=timezone.utc)
+    end = datetime.combine(entry_date, clock_out_time, tzinfo=timezone.utc)
+    if end <= start:
+        raise ValueError("Clock-out must be after clock-in")
+
+    day_start = datetime.combine(entry_date, dt_time.min, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+    existing = list(db.scalars(
+        select(models.TimeEntry).where(
+            models.TimeEntry.driver_user_id == driver_user_id,
+            models.TimeEntry.started_at >= day_start, models.TimeEntry.started_at < day_end,
+        )
+    ))
+    for e in existing:
+        db.delete(e)
+    db.flush()
+
+    entry = models.TimeEntry(
+        driver_user_id=driver_user_id, activity_type="On Shift", source="manual_office",
+        added_by=added_by, started_at=start, ended_at=end,
+    )
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+def delete_time_entry(db: Session, entry_id: int) -> None:
+    entry = db.get(models.TimeEntry, entry_id)
+    if entry:
+        db.delete(entry)
+        db.flush()
+
+
 def time_entries_for_driver(db: Session, driver_user_id: int, date_from: str, date_to: str) -> list[models.TimeEntry]:
     """date_from/date_to are 'YYYY-MM-DD' strings, inclusive, compared
     against when each entry started."""
@@ -1256,17 +1299,22 @@ def daily_timesheet(db: Session, driver_user_id: int, date_from: str, date_to: s
         day_entries = entries_by_date.get(current, [])
         clock_in = clock_out = None
         hours_worked = 0.0
+        entry_id = None
+        is_manual = False
         if day_entries and not is_holiday:
             day_entries_sorted = sorted(day_entries, key=lambda e: e.started_at)
             clock_in = day_entries_sorted[0].started_at
             with_end = [e for e in day_entries_sorted if e.ended_at]
             clock_out = with_end[-1].ended_at if with_end else None
             hours_worked = hours_summary(day_entries).get("On Shift", 0)
+            if len(day_entries_sorted) == 1:
+                entry_id = day_entries_sorted[0].entry_id
+                is_manual = day_entries_sorted[0].source == "manual_office"
         tacho = tacho_by_date.get(current)
         driving_hours = 0.0 if is_holiday else (float(tacho.driving_hours) if tacho else 0.0)
         days.append({
             "date": current, "is_holiday": is_holiday, "clock_in": clock_in, "clock_out": clock_out,
-            "hours_worked": hours_worked, "driving_hours": driving_hours,
+            "hours_worked": hours_worked, "driving_hours": driving_hours, "entry_id": entry_id, "is_manual": is_manual,
             "worked": bool(day_entries) and not is_holiday,
         })
         current += timedelta(days=1)

@@ -221,20 +221,14 @@ here now is deliberately basic:
   day as holiday zeroes it out on the timesheet even if a real shift or
   driving-hours entry already exists for that date — holiday always
   wins, and the weekly totals correctly exclude it either way.
-- **Printable weekly timesheet** — **/timesheets**, "Download PDF": one
-  row per calendar day (worked, rest, or holiday), with total hours
-  worked and total driving hours as the last row, right after the last
-  day — same shape as the office's own weekly example (7:30am–5pm =
-  9.5 hrs). Rendered with `reportlab`, so it works the same on Render
-  as on the office PC.
-- **Holiday days** — added by the office at **/timesheets** (a driver
-  isn't expected to clock in on a day marked this way). Shows as HOLIDAY
-  on the timesheet at zero hours, rather than the previous practice of
-  logging a fake 8-hour shift to process holiday pay, which quietly
-  skewed Working Time Directive totals. Tested specifically: marking a
-  day as holiday zeroes it out on the timesheet even if a real shift or
-  driving-hours entry already exists for that date — holiday always
-  wins, and the weekly totals correctly exclude it either way.
+- **Forgotten clock in/out** — same idea, same place: "Add or correct a
+  shift" lets office enter the actual clock-in and clock-out time for a
+  day directly. If there's already something there for that day (a
+  partial forgotten scan, or an earlier correction), it's replaced
+  cleanly rather than left alongside the new entry — tested specifically
+  to confirm this never silently doubles someone's hours. Shows a small
+  "(corrected)" tag on the timesheet so it's visibly distinct from a
+  normal QR-scanned day, with a Remove option if it needs undoing.
 
 ## Office staff logins and the Admin role
 

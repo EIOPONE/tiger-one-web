@@ -336,3 +336,90 @@ def test_daily_timesheet_rest_day_shown_but_not_worked(db):
     assert days[0]["worked"] is False
     assert days[0]["is_holiday"] is False
     assert days[0]["hours_worked"] == 0.0
+
+
+def test_add_manual_time_entry_for_a_day_with_nothing_there(db):
+    """The core scenario: a driver forgot to clock in at all, office adds
+    the correct times after the fact."""
+    from datetime import time as dt_time
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    entry = crud.add_manual_time_entry(
+        db, driver.user_id, date(2026, 9, 8), dt_time(7, 30), dt_time(17, 0), "admin",
+    )
+    db.commit()
+
+    assert entry.source == "manual_office"
+    assert entry.added_by == "admin"
+    days = crud.daily_timesheet(db, driver.user_id, "2026-09-08", "2026-09-08")
+    assert days[0]["worked"] is True
+    assert days[0]["is_manual"] is True
+    assert days[0]["hours_worked"] == pytest.approx(9.5, abs=0.01)
+
+
+def test_add_manual_time_entry_replaces_a_partial_forgotten_scan(db):
+    """A driver clocked in but forgot to clock out — that leaves an open
+    entry. Office adding the correct full day must replace it, not add a
+    second overlapping entry that would double the hours."""
+    from datetime import time as dt_time
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    # Driver clocked in this morning and never clocked out.
+    partial = crud.start_activity(db, driver.user_id, "On Shift")
+    partial.started_at = datetime(2026, 9, 8, 7, 30, tzinfo=timezone.utc)
+    db.commit()
+
+    crud.add_manual_time_entry(db, driver.user_id, date(2026, 9, 8), dt_time(7, 30), dt_time(17, 0), "admin")
+    db.commit()
+
+    # Exactly one entry for that day now — the partial scan was replaced,
+    # not left alongside the correction (which would double-count hours).
+    all_entries = crud.time_entries_for_driver(db, driver.user_id, "2026-09-08", "2026-09-08")
+    assert len(all_entries) == 1
+    assert all_entries[0].source == "manual_office"
+
+    days = crud.daily_timesheet(db, driver.user_id, "2026-09-08", "2026-09-08")
+    assert days[0]["hours_worked"] == pytest.approx(9.5, abs=0.01)  # not double-counted
+
+
+def test_add_manual_time_entry_rejects_clock_out_before_clock_in(db):
+    from datetime import time as dt_time
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+    try:
+        crud.add_manual_time_entry(db, driver.user_id, date(2026, 9, 8), dt_time(17, 0), dt_time(7, 30), "admin")
+        assert False, "expected a ValueError"
+    except ValueError:
+        pass
+    days = crud.daily_timesheet(db, driver.user_id, "2026-09-08", "2026-09-08")
+    assert days[0]["worked"] is False  # nothing got created
+
+
+def test_delete_time_entry(db):
+    from datetime import time as dt_time
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+    entry = crud.add_manual_time_entry(db, driver.user_id, date(2026, 9, 8), dt_time(7, 30), dt_time(17, 0), "admin")
+    db.commit()
+
+    crud.delete_time_entry(db, entry.entry_id)
+    db.commit()
+    days = crud.daily_timesheet(db, driver.user_id, "2026-09-08", "2026-09-08")
+    assert days[0]["worked"] is False
+
+
+def test_manual_entry_on_a_holiday_day_still_shows_zero(db):
+    """Same principle as before — holiday status overrides everything
+    else for that date, including a manual correction."""
+    from datetime import time as dt_time
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+    crud.add_manual_time_entry(db, driver.user_id, date(2026, 9, 8), dt_time(7, 30), dt_time(17, 0), "admin")
+    crud.add_holiday(db, driver.user_id, date(2026, 9, 8), "admin")
+    db.commit()
+
+    days = crud.daily_timesheet(db, driver.user_id, "2026-09-08", "2026-09-08")
+    assert days[0]["is_holiday"] is True
+    assert days[0]["hours_worked"] == 0.0

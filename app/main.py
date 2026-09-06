@@ -867,6 +867,37 @@ def timesheets_add_holiday(request: Request, driver_id: int = Form(...), holiday
     return RedirectResponse(f"/timesheets?driver_id={driver_id}", status_code=303)
 
 
+@app.post("/timesheets/manual-entry")
+def timesheets_add_manual_entry(
+    request: Request, driver_id: int = Form(...), entry_date: str = Form(...),
+    clock_in: str = Form(...), clock_out: str = Form(...), db: Session = Depends(db_dependency),
+):
+    """A correction for a driver who forgot to clock in/out — replaces
+    that day's entries entirely (see add_manual_time_entry)."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    from datetime import time as dt_time
+    try:
+        crud.add_manual_time_entry(
+            db, driver_id, date.fromisoformat(entry_date),
+            dt_time.fromisoformat(clock_in), dt_time.fromisoformat(clock_out), user.full_name,
+        )
+    except ValueError:
+        pass  # clock-out before clock-in — silently ignored, form validation catches this client-side too
+    return RedirectResponse(f"/timesheets?driver_id={driver_id}", status_code=303)
+
+
+@app.post("/timesheets/entry/{entry_id}/delete")
+def timesheets_delete_entry(request: Request, entry_id: int, driver_id: str = Form(""),
+                             db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.delete_time_entry(db, entry_id)
+    return RedirectResponse(f"/timesheets?driver_id={driver_id}" if driver_id else "/timesheets", status_code=303)
+
+
 @app.post("/timesheets/holiday/{holiday_id}/delete")
 def timesheets_delete_holiday(request: Request, holiday_id: int, driver_id: str = Form(""),
                                db: Session = Depends(db_dependency)):

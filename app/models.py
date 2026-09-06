@@ -406,7 +406,8 @@ class TimeEntry(Base):
     activity_type = Column(String, nullable=False)  # Driving | Yard Work | Break | Other
     vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
     clock_point_id = Column(Integer, ForeignKey("clock_points.clock_point_id"), nullable=True)
-    source = Column(String, nullable=False, default="qr_scan")  # qr_scan | manual
+    source = Column(String, nullable=False, default="qr_scan")  # qr_scan | manual_office
+    added_by = Column(String, nullable=True)  # office user's name, only set for manual corrections
     started_at = Column(DateTime, nullable=False, server_default=func.now())
     ended_at = Column(DateTime, nullable=True)  # NULL while this entry is still active
 

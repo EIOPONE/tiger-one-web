@@ -49,6 +49,7 @@ _LIGHT_MIGRATIONS = [
     "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude NUMERIC(9,6)",
     "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_position_at TIMESTAMP",
     "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS qr_token VARCHAR",
+    "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS added_by VARCHAR",
     # Widens the allowed activity_type values to add 'On Shift' — the new,
     # simpler QR clock-in only ever creates this one type now. Drop-then-add
     # runs safely on every startup, not just once.
