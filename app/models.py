@@ -451,3 +451,26 @@ class TachographRecord(Base):
         UniqueConstraint("driver_user_id", "record_date", name="uq_tacho_driver_date"),
     )
 
+
+class HolidayRecord(Base):
+    """A day marked as holiday by the office for a driver — deliberately
+    separate from a normal shift. Shows as HOLIDAY on the timesheet with
+    zero hours logged, rather than the previous practice of faking an
+    8-hour shift to process holiday pay, which quietly skewed Working
+    Time Directive totals. The driver isn't expected to clock in on a
+    day marked this way; the office adds it directly."""
+    __tablename__ = "holiday_records"
+
+    holiday_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=False)
+    holiday_date = Column(Date, nullable=False)
+    notes = Column(String, nullable=False, default="")
+    added_by = Column(String, nullable=False, default="")
+    added_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    driver = relationship("AppUser")
+
+    __table_args__ = (
+        UniqueConstraint("driver_user_id", "holiday_date", name="uq_holiday_driver_date"),
+    )
+

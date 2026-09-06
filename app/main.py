@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import crud, models
-from . import pod_pdf, xero_client, report_pdf, quote_pdf
+from . import pod_pdf, xero_client, report_pdf, quote_pdf, timesheet_pdf
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -826,18 +826,55 @@ def timesheets_page(request: Request, driver_id: str = "", date_from: str = "", 
     date_from = date_from or (today - timedelta(days=7)).isoformat()
     date_to = date_to or today.isoformat()
     drivers = crud.list_drivers(db)
-    entries, summary, tacho_records = [], {}, []
+    days, totals, tacho_records, holidays = [], {}, [], []
     selected_driver_id = int(driver_id) if driver_id else (drivers[0].user_id if drivers else None)
     if selected_driver_id:
-        entries = crud.time_entries_for_driver(db, selected_driver_id, date_from, date_to)
-        summary = crud.hours_summary(entries)
+        days = crud.daily_timesheet(db, selected_driver_id, date_from, date_to)
+        totals = crud.daily_timesheet_totals(days)
         tacho_records = crud.tachograph_records_for_driver(db, selected_driver_id, date_from, date_to)
+        holidays = crud.holidays_for_driver(db, selected_driver_id, date_from, date_to)
     return templates.TemplateResponse(request, "timesheets.html", {
         "user": user, "active": "timesheets", "drivers": drivers, "selected_driver_id": selected_driver_id,
-        "date_from": date_from, "date_to": date_to, "entries": entries, "summary": summary,
-        "tacho_records": tacho_records, "vehicles": crud.list_vehicles(db),
-        "tacho_total": sum((r.driving_hours for r in tacho_records), Decimal("0")),
+        "date_from": date_from, "date_to": date_to, "days": days, "totals": totals,
+        "tacho_records": tacho_records, "holidays": holidays, "vehicles": crud.list_vehicles(db),
     })
+
+
+@app.get("/timesheets/export.pdf")
+def timesheets_export_pdf(request: Request, driver_id: int, date_from: str, date_to: str,
+                           db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    driver = db.get(models.AppUser, driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    days = crud.daily_timesheet(db, driver_id, date_from, date_to)
+    totals = crud.daily_timesheet_totals(days)
+    pdf_bytes = timesheet_pdf.generate_timesheet_pdf(driver.full_name, date_from, date_to, days, totals, LOGO_PATH)
+    filename = f"Timesheet_{driver.full_name.replace(' ', '_')}_{date_from}_to_{date_to}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@app.post("/timesheets/holiday")
+def timesheets_add_holiday(request: Request, driver_id: int = Form(...), holiday_date: str = Form(...),
+                            notes: str = Form(""), db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.add_holiday(db, driver_id, date.fromisoformat(holiday_date), user.full_name, notes)
+    return RedirectResponse(f"/timesheets?driver_id={driver_id}", status_code=303)
+
+
+@app.post("/timesheets/holiday/{holiday_id}/delete")
+def timesheets_delete_holiday(request: Request, holiday_id: int, driver_id: str = Form(""),
+                               db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.remove_holiday(db, holiday_id)
+    return RedirectResponse(f"/timesheets?driver_id={driver_id}" if driver_id else "/timesheets", status_code=303)
 
 
 @app.post("/timesheets/tachograph")

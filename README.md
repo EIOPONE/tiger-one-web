@@ -177,13 +177,18 @@ here now is deliberately basic:
 - **One QR code in the office** (`/clock-points` → add a location, print
   its QR — a real, scannable PNG, decoded and verified during testing).
   Drivers scan it to **start work** in the morning and **finish work** at
-  the end of the day. No activity picker, no vehicle picker — just on
-  and off.
+  the end of the day. No PIN, no login for this specific action — just
+  tap your own name from a list and tap Clock In/Clock Out. This is a
+  deliberate trust-based choice for a small team (confirmed with the
+  client) — anyone could tap someone else's name, and that's accepted as
+  a fine trade-off for now. Everything else in the driver app (viewing
+  jobs, signing PODs, GPS tracking, vehicle checks) still requires the
+  PIN login as before — only the clock action itself is relaxed.
 - **Finishing work requires entering today's driving hours first** — read
   off the tachograph after the last drop-off of the day. This is a real,
-  server-enforced requirement, not just a UI nudge: the clock-out endpoint
-  won't accept a request without it (confirmed with a direct request that
-  skips the form entirely — rejected, driver stays clocked in).
+  server-enforced requirement, not just a UI nudge: confirmed working
+  even with the login removed — a request that skips the driving-hours
+  field is rejected regardless of who's making it.
 - **/timesheets** then shows both figures automatically, per driver, per
   date range: total hours worked (straight from clock-in to clock-out)
   and driving hours (from what the driver entered). Office can still add
@@ -202,6 +207,34 @@ here now is deliberately basic:
   already tracks. If it's ever wanted again, the git history has a
   complete, tested implementation to revive rather than rebuild from
   scratch.
+- **Printable weekly timesheet** — **/timesheets**, "Download PDF": one
+  row per calendar day (worked, rest, or holiday), with total hours
+  worked and total driving hours as the last row, right after the last
+  day — same shape as the office's own weekly example (7:30am–5pm =
+  9.5 hrs). Rendered with `reportlab`, so it works the same on Render
+  as on the office PC.
+- **Holiday days** — added by the office at **/timesheets** (a driver
+  isn't expected to clock in on a day marked this way). Shows as HOLIDAY
+  on the timesheet at zero hours, rather than the previous practice of
+  logging a fake 8-hour shift to process holiday pay, which quietly
+  skewed Working Time Directive totals. Tested specifically: marking a
+  day as holiday zeroes it out on the timesheet even if a real shift or
+  driving-hours entry already exists for that date — holiday always
+  wins, and the weekly totals correctly exclude it either way.
+- **Printable weekly timesheet** — **/timesheets**, "Download PDF": one
+  row per calendar day (worked, rest, or holiday), with total hours
+  worked and total driving hours as the last row, right after the last
+  day — same shape as the office's own weekly example (7:30am–5pm =
+  9.5 hrs). Rendered with `reportlab`, so it works the same on Render
+  as on the office PC.
+- **Holiday days** — added by the office at **/timesheets** (a driver
+  isn't expected to clock in on a day marked this way). Shows as HOLIDAY
+  on the timesheet at zero hours, rather than the previous practice of
+  logging a fake 8-hour shift to process holiday pay, which quietly
+  skewed Working Time Directive totals. Tested specifically: marking a
+  day as holiday zeroes it out on the timesheet even if a real shift or
+  driving-hours entry already exists for that date — holiday always
+  wins, and the weekly totals correctly exclude it either way.
 
 ## Office staff logins and the Admin role
 

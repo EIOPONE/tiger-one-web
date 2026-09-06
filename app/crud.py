@@ -1183,3 +1183,100 @@ def delete_tachograph_record(db: Session, record_id: int) -> None:
     if record:
         db.delete(record)
         db.flush()
+
+
+# --- holidays -----------------------------------------------------------------------------
+
+def add_holiday(db: Session, driver_user_id: int, holiday_date, added_by: str, notes: str = "") -> models.HolidayRecord:
+    """Idempotent — marking the same driver+date twice just returns the
+    existing record rather than erroring or duplicating."""
+    existing = db.scalar(
+        select(models.HolidayRecord).where(
+            models.HolidayRecord.driver_user_id == driver_user_id,
+            models.HolidayRecord.holiday_date == holiday_date,
+        )
+    )
+    if existing:
+        return existing
+    record = models.HolidayRecord(
+        driver_user_id=driver_user_id, holiday_date=holiday_date, added_by=added_by, notes=notes.strip(),
+    )
+    db.add(record)
+    db.flush()
+    return record
+
+
+def remove_holiday(db: Session, holiday_id: int) -> None:
+    record = db.get(models.HolidayRecord, holiday_id)
+    if record:
+        db.delete(record)
+        db.flush()
+
+
+def holidays_for_driver(db: Session, driver_user_id: int, date_from: str, date_to: str) -> list[models.HolidayRecord]:
+    start = datetime.fromisoformat(date_from).date()
+    end = datetime.fromisoformat(date_to).date()
+    return list(db.scalars(
+        select(models.HolidayRecord)
+        .where(models.HolidayRecord.driver_user_id == driver_user_id,
+               models.HolidayRecord.holiday_date >= start, models.HolidayRecord.holiday_date <= end)
+        .order_by(models.HolidayRecord.holiday_date)
+    ))
+
+
+# --- unified daily timesheet (shifts + driving hours + holidays, one row per day) -------
+
+def daily_timesheet(db: Session, driver_user_id: int, date_from: str, date_to: str) -> list[dict]:
+    """One row per calendar day in the range — merges clock in/out,
+    tachograph driving hours, and holiday status into a single view.
+    Both the timesheets page and the printable PDF are built from this,
+    so they can never show different numbers from each other.
+
+    A holiday day always shows zero hours worked and zero driving hours,
+    regardless of any shift or tacho data that happens to exist for that
+    date — this is the actual fix for the 'faking 8 hours' problem: a
+    holiday is a distinct state, not a shift with invented numbers."""
+    start = datetime.fromisoformat(date_from).date()
+    end = datetime.fromisoformat(date_to).date()
+    entries = time_entries_for_driver(db, driver_user_id, date_from, date_to)
+    tacho_records = tachograph_records_for_driver(db, driver_user_id, date_from, date_to)
+    holidays = holidays_for_driver(db, driver_user_id, date_from, date_to)
+
+    entries_by_date: dict = {}
+    for e in entries:
+        started = e.started_at if e.started_at.tzinfo else e.started_at.replace(tzinfo=timezone.utc)
+        entries_by_date.setdefault(started.date(), []).append(e)
+    tacho_by_date = {r.record_date: r for r in tacho_records}
+    holiday_dates = {h.holiday_date for h in holidays}
+
+    days = []
+    current = start
+    while current <= end:
+        is_holiday = current in holiday_dates
+        day_entries = entries_by_date.get(current, [])
+        clock_in = clock_out = None
+        hours_worked = 0.0
+        if day_entries and not is_holiday:
+            day_entries_sorted = sorted(day_entries, key=lambda e: e.started_at)
+            clock_in = day_entries_sorted[0].started_at
+            with_end = [e for e in day_entries_sorted if e.ended_at]
+            clock_out = with_end[-1].ended_at if with_end else None
+            hours_worked = hours_summary(day_entries).get("On Shift", 0)
+        tacho = tacho_by_date.get(current)
+        driving_hours = 0.0 if is_holiday else (float(tacho.driving_hours) if tacho else 0.0)
+        days.append({
+            "date": current, "is_holiday": is_holiday, "clock_in": clock_in, "clock_out": clock_out,
+            "hours_worked": hours_worked, "driving_hours": driving_hours,
+            "worked": bool(day_entries) and not is_holiday,
+        })
+        current += timedelta(days=1)
+    return days
+
+
+def daily_timesheet_totals(days: list[dict]) -> dict:
+    return {
+        "total_hours_worked": round(sum(d["hours_worked"] for d in days), 2),
+        "total_driving_hours": round(sum(d["driving_hours"] for d in days), 2),
+        "holiday_days": sum(1 for d in days if d["is_holiday"]),
+    }
+
