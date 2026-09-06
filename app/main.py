@@ -1041,43 +1041,40 @@ def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
 # clock-out (see finish_work) rather than tracked live through this scan.
 
 @app.get("/driver/clock/{token}", response_class=HTMLResponse)
-def driver_clock_page(token: str, request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        # Bounce to login, then straight back to this exact QR link once signed in.
-        return RedirectResponse(f"/driver/login?next=/driver/clock/{token}", status_code=303)
+def driver_clock_page(token: str, request: Request, confirmed: str = "", db: Session = Depends(db_dependency)):
+    """No login required, deliberately — this is a small trusted team and
+    a shared office QR, so clocking in is just 'tap your name'. The rest
+    of the driver app (jobs, PODs, GPS, vehicle checks) still requires a
+    PIN login; only this specific action doesn't."""
     point = crud.get_clock_point_by_token(db, token)
     if not point:
         raise HTTPException(status_code=404, detail="This clock-in code isn't recognised — check with the office.")
+    drivers = crud.list_drivers(db)
+    statuses = {d.user_id: crud.get_active_time_entry(db, d.user_id) for d in drivers}
+    confirmed_driver = next((d for d in drivers if str(d.user_id) == confirmed), None)
     return templates.TemplateResponse(request, "driver_clock.html", {
-        "user": user, "clock_point": point,
-        "active_entry": crud.get_active_time_entry(db, user.user_id),
+        "user": None, "clock_point": point, "drivers": drivers, "statuses": statuses,
+        "confirmed_driver": confirmed_driver,
     })
 
 
 @app.post("/driver/clock/{token}/start")
-def driver_clock_start(token: str, request: Request, db: Session = Depends(db_dependency)):
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/driver/login", status_code=303)
+def driver_clock_start(token: str, request: Request, driver_id: int = Form(...),
+                        db: Session = Depends(db_dependency)):
     point = crud.get_clock_point_by_token(db, token)
     if not point:
         raise HTTPException(status_code=404, detail="Clock point not found")
-    crud.start_activity(db, user.user_id, "On Shift", clock_point_id=point.clock_point_id, source="qr_scan")
-    return RedirectResponse("/driver", status_code=303)
+    crud.start_activity(db, driver_id, "On Shift", clock_point_id=point.clock_point_id, source="qr_scan")
+    return RedirectResponse(f"/driver/clock/{token}?confirmed={driver_id}", status_code=303)
 
 
 @app.post("/driver/clock/{token}/finish")
-def driver_clock_finish(token: str, request: Request, driving_hours: str = Form(...),
-                         db: Session = Depends(db_dependency)):
-    """The end-of-day scan off — driving_hours is required by the form
-    itself (see driver_clock.html), so there's no route to clocking out
-    without it."""
-    user = get_user_or_none(request, db)
-    if not user:
-        return RedirectResponse("/driver/login", status_code=303)
-    crud.finish_work(db, user.user_id, Decimal(driving_hours))
-    return RedirectResponse("/driver", status_code=303)
+def driver_clock_finish(token: str, request: Request, driver_id: int = Form(...),
+                         driving_hours: str = Form(...), db: Session = Depends(db_dependency)):
+    """driving_hours is required by the form itself — there's no route to
+    clocking out without it."""
+    crud.finish_work(db, driver_id, Decimal(driving_hours))
+    return RedirectResponse(f"/driver/clock/{token}?confirmed={driver_id}", status_code=303)
 
 
 # --- driver vehicle check (daily walkaround, DVSA-style) ---------------------------------
