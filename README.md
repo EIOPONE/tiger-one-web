@@ -167,68 +167,41 @@ without needing separate buttons for each.
 - Office sees everything submitted at **/vehicle-checks**, with any
   check that has a defect clearly flagged alongside the driver's notes.
 
-## Driver hours — foundations
+## Driver hours
 
-Two genuinely different things, kept separate on purpose:
+Simplified after talking it through with the client — the tachograph
+already covers driving-hours detail properly, so there's no need for this
+app to shadow that with its own separate driving activity-tracking. What's
+here now is deliberately basic:
 
-- **Driving hours** — if your vehicles are tachograph-regulated (likely,
-  since volumetric mixers converged with standard HGV rules in 2018),
-  **the tachograph is the legal record**, not this app. What's built here
-  is a useful operational cross-check (when was someone actually driving,
-  which vehicle), not a substitute for a required tachograph.
-- **Working Time Directive** — covers *all* working time, including yard
-  work, not just driving. This is exactly what an app-based clock-in
-  system is well suited to track, and is the main point of what's here.
-
-Deliberately **not built**: any compliance limit checking or alerts (e.g.
-"approaching the 9-hour driving limit"). Which specific thresholds legally
-apply depends on vehicle type and exemptions that are genuinely worth
-confirming with a transport compliance advisor before they're hard-coded
-into software — this gives you the raw, accurate hour totals to check
-against whatever the real rules turn out to be, not a false sense of
-compliance from numbers I guessed at.
-
-**Two separate driving-hours records, on purpose**: since these vehicles
-are tachograph-regulated, the driver's live "Driving" clock-in (via QR)
-is an operational signal only — who was out driving, roughly when — not
-the compliance record. **/timesheets** has a distinct "Verified driving
-hours" section where office staff enter the actual figure from the
-tachograph chart/card after the shift, per driver per day. Re-entering
-the same driver+date updates that day's figure rather than creating a
-duplicate (tested for). This table is a searchable summary for reporting
-— it does not replace the legal obligation to retain the actual
-tachograph records themselves.
-
-How it works:
-
-- **/clock-points** (office) — add a named location (e.g. "Yard
-  Entrance"), then print its QR code (a real, scannable PNG — decoded
-  and verified during testing, not just visually checked). Stick it on
-  the wall.
-- **Vehicles also get their own QR code** (`/vehicles`, "Print QR" per
-  vehicle) — for one in the cab. Scanning it is a single tap: "Start
-  Driving TC01", no vehicle picker needed since the QR already says
-  which truck. If someone else is currently showing as driving that
-  vehicle, starting hands it over automatically — their entry closes,
-  yours opens, so a last-minute driver swap just works by scanning
-  rather than needing anyone to update anything by hand. This was
-  specifically tested with two real drivers and a real handover, not
-  just the crud logic in isolation.
-- A driver scans it with their phone's ordinary camera — no in-app
-  scanner needed, it just opens the browser. If they're not logged in
-  yet, they're sent to login first and land back on that exact clock
-  page afterwards, not just the dashboard.
-- They tap what they're starting: **Driving** (picks a vehicle),
-  **Yard Work**, **Break**, or **Other**. Starting something new
-  automatically closes whatever was open before — a driver is only ever
-  doing one thing at a time, so switching activity is just starting the
-  next one.
-- The driver dashboard shows a live "clocked in: X since HH:MM" banner,
-  plus a manual fallback link to the first clock point for testing or if
-  a driver forgets to scan.
-- Office sees a live "who's doing what right now" view on /clock-points,
-  and full history with hour totals by activity type at **/timesheets**
-  (date range, per driver).
+- **One QR code in the office** (`/clock-points` → add a location, print
+  its QR — a real, scannable PNG, decoded and verified during testing).
+  Drivers scan it to **start work** in the morning and **finish work** at
+  the end of the day. No activity picker, no vehicle picker — just on
+  and off.
+- **Finishing work requires entering today's driving hours first** — read
+  off the tachograph after the last drop-off of the day. This is a real,
+  server-enforced requirement, not just a UI nudge: the clock-out endpoint
+  won't accept a request without it (confirmed with a direct request that
+  skips the form entirely — rejected, driver stays clocked in).
+- **/timesheets** then shows both figures automatically, per driver, per
+  date range: total hours worked (straight from clock-in to clock-out)
+  and driving hours (from what the driver entered). Office can still add
+  or correct a day's driving-hours entry here too — e.g. after actually
+  checking the chart or card — using the same record the driver's own
+  entry writes to.
+- Deliberately **not built**: any compliance limit checking or alerts
+  (e.g. "approaching the 9-hour driving limit"). Which specific
+  thresholds legally apply depends on vehicle type and exemptions that
+  are genuinely worth confirming with a transport compliance advisor
+  before they're hard-coded into software — this gives accurate raw
+  numbers to check against whatever the real rules turn out to be.
+- **Rolled back**: the earlier version of this had a separate QR per
+  vehicle for "start driving" with automatic handover between drivers.
+  Removed on the client's steer, since it duplicated what the tachograph
+  already tracks. If it's ever wanted again, the git history has a
+  complete, tested implementation to revive rather than rebuild from
+  scratch.
 
 ## Office staff logins and the Admin role
 

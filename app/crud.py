@@ -697,52 +697,6 @@ def deactivate_vehicle(db: Session, vehicle_id: int) -> None:
         db.flush()
 
 
-def backfill_vehicle_qr_tokens(db: Session) -> None:
-    """Called on every app startup (cheap no-op once done) — gives a QR
-    token to any vehicle that doesn't have one yet, so vehicles created
-    before this feature existed still get a working cab QR code without
-    needing a manual fix-up step."""
-    vehicles = list(db.scalars(select(models.Vehicle).where(models.Vehicle.qr_token.is_(None))))
-    for vehicle in vehicles:
-        vehicle.qr_token = new_access_token()
-    if vehicles:
-        db.flush()
-
-
-def get_vehicle_by_qr_token(db: Session, token: str) -> models.Vehicle | None:
-    return db.scalar(select(models.Vehicle).where(models.Vehicle.qr_token == token))
-
-
-def get_active_driver_for_vehicle(db: Session, vehicle_id: int) -> models.TimeEntry | None:
-    """Who's currently driving this vehicle, if anyone — derived straight
-    from the live TimeEntry data rather than a separate assignment table,
-    so there's only ever one source of truth for 'who's driving what'."""
-    return db.scalar(
-        select(models.TimeEntry).where(
-            models.TimeEntry.vehicle_id == vehicle_id, models.TimeEntry.activity_type == "Driving",
-            models.TimeEntry.ended_at.is_(None),
-        )
-    )
-
-
-def start_driving_vehicle(
-    db: Session, driver_user_id: int, vehicle_id: int, clock_point_id: int | None = None,
-) -> models.TimeEntry:
-    """The cab-QR scan flow. Closes whatever the scanning driver was doing
-    before (same as start_activity), AND — this is the important bit for
-    a last-minute driver swap — closes anyone ELSE's still-open 'Driving'
-    entry for this same vehicle first, so a handover never leaves two
-    drivers appearing to drive the same truck at once."""
-    other_active = get_active_driver_for_vehicle(db, vehicle_id)
-    if other_active and other_active.driver_user_id != driver_user_id:
-        other_active.ended_at = datetime.now(timezone.utc)
-        db.flush()
-    return start_activity(
-        db, driver_user_id, "Driving", clock_point_id=clock_point_id,
-        vehicle_id=vehicle_id, source="qr_scan_vehicle",
-    )
-
-
 def deliveries_for_driver(db: Session, driver_user_id: int, include_delivered: bool = False) -> list[models.Delivery]:
     """A driver's own jobs — what their dashboard shows after they log in."""
     query = select(models.Delivery).where(models.Delivery.driver_user_id == driver_user_id)
@@ -1053,7 +1007,7 @@ def sync_vehicle_positions(db: Session, base_url: str, username: str, password: 
 
 # --- driver hours: clock points + time entries -------------------------------------------
 
-ACTIVITY_TYPES = ("Driving", "Yard Work", "Break", "Other")
+ACTIVITY_TYPES = ("On Shift", "Driving", "Yard Work", "Break", "Other")
 
 
 def create_clock_point(db: Session, name: str) -> models.ClockPoint:
@@ -1114,6 +1068,26 @@ def clock_out(db: Session, driver_user_id: int) -> models.TimeEntry | None:
         active.ended_at = datetime.now(timezone.utc)
         db.flush()
     return active
+
+
+def driver_has_entered_tacho_today(db: Session, driver_user_id: int) -> bool:
+    today = datetime.now(timezone.utc).date()
+    return db.scalar(
+        select(func.count()).select_from(models.TachographRecord).where(
+            models.TachographRecord.driver_user_id == driver_user_id,
+            models.TachographRecord.record_date == today,
+        )
+    ) > 0
+
+
+def finish_work(db: Session, driver_user_id: int, driving_hours) -> models.TimeEntry | None:
+    """The end-of-day 'scan off' action — records today's tachograph
+    driving hours (self-reported by the driver, same table an office
+    correction would later update) and clocks out in one action. This is
+    the enforcement point: there's no clock_out path that skips entering
+    driving hours, since a driver can't reach this without providing them."""
+    save_tachograph_record(db, driver_user_id, datetime.now(timezone.utc).date(), driving_hours, "driver (self-reported)")
+    return clock_out(db, driver_user_id)
 
 
 def time_entries_for_driver(db: Session, driver_user_id: int, date_from: str, date_to: str) -> list[models.TimeEntry]:

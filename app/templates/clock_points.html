@@ -14,7 +14,7 @@
       <td>{{ d.driver.full_name }}</td>
       <td>
         {% if d.active_entry %}
-          <span class="pill pill-completed">{{ d.active_entry.activity_type }}{% if d.active_entry.vehicle %} — {{ d.active_entry.vehicle.registration }}{% endif %} since {{ d.since.strftime('%H:%M') }}</span>
+          <span class="pill pill-completed">On shift since {{ d.since.strftime('%H:%M') }}</span>
         {% else %}
           <span class="muted">Not clocked in</span>
         {% endif %}

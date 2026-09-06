@@ -416,7 +416,7 @@ class TimeEntry(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "activity_type IN ('Driving','Yard Work','Break','Other')", name="ck_time_entry_activity_type"
+            "activity_type IN ('On Shift','Driving','Yard Work','Break','Other')", name="ck_time_entry_activity_type"
         ),
     )
 
