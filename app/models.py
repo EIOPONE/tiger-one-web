@@ -189,6 +189,11 @@ class Order(Base):
     customer_id = Column(Integer, ForeignKey("customers.customer_id"), nullable=False)
     project = Column(String, nullable=False, default="")
     site_address = Column(String, nullable=False, default="")
+    # Cached geocode of site_address — resolved once via Nominatim
+    # (OpenStreetMap's geocoder) then reused, rather than re-geocoding the
+    # same address on every ETA calculation.
+    site_latitude = Column(Numeric(9, 6), nullable=True)
+    site_longitude = Column(Numeric(9, 6), nullable=True)
     requested_date = Column(String, nullable=False, default="")
     status = Column(String, nullable=False, default="Draft")
     commercial_notes = Column(String, nullable=False, default="")
@@ -282,6 +287,11 @@ class Delivery(Base):
     # whatever order jobs happened to be created in.
     sequence = Column(Integer, nullable=False, default=0)
     status = Column(String, nullable=False, default="Scheduled")
+    # Cached ETA, refreshed on the same 30s cycle as the Traccar position
+    # sync — computed there, not on every dashboard page load, to avoid
+    # hammering the free routing/geocoding services on every refresh.
+    eta_minutes = Column(Integer, nullable=True)
+    eta_updated_at = Column(DateTime, nullable=True)
     access_token = Column(String, nullable=False, unique=True)  # driver's link, no login needed
     pod_signed_by = Column(String, nullable=False, default="")
     pod_signature_path = Column(String, nullable=False, default="")

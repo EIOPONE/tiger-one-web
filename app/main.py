@@ -51,14 +51,17 @@ def on_startup():
 
 async def _traccar_poll_loop():
     """Pulls positions from Traccar every 30s and updates the matching
-    vehicles. Runs for the lifetime of the app; only starts at all if
-    TRACCAR_URL/USERNAME/PASSWORD are set, so it's a complete no-op — not
-    even a background task — until Traccar's actually configured."""
+    vehicles, then recomputes ETAs for active deliveries from those fresh
+    positions — same cycle, so ETA calculation never happens on a
+    dashboard page load. Runs for the lifetime of the app; only starts at
+    all if TRACCAR_URL/USERNAME/PASSWORD are set, so it's a complete
+    no-op — not even a background task — until Traccar's configured."""
     while True:
         try:
             def _sync():
                 with get_session() as db:
-                    return crud.sync_vehicle_positions(db, TRACCAR_URL, TRACCAR_USERNAME, TRACCAR_PASSWORD)
+                    crud.sync_vehicle_positions(db, TRACCAR_URL, TRACCAR_USERNAME, TRACCAR_PASSWORD)
+                    crud.refresh_etas_for_active_deliveries(db)
             await asyncio.to_thread(_sync)
         except Exception:
             pass  # never let a bad poll cycle kill the loop

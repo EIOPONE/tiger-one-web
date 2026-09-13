@@ -63,32 +63,49 @@ the POD and sales-report PDFs — tested with a 30-line quote to confirm
 the item table paginates correctly across pages, header row repeating on
 each page, before this was called done.
 
-## Truck tracking (Traccar)
+## Truck tracking (Traccar) and live ETAs
 
-The beginnings of live tracking, built ahead of having a real Traccar
-server to test against — proven with a simulated Traccar server in the
-test suite, ready to go live the moment yours is up.
+Live and confirmed working against a real Traccar server (self-hosted on
+Hetzner), not just the simulated one used in tests.
 
-- **/vehicles** now has an optional Traccar device ID field per vehicle —
-  this is the identifier you type into Traccar Client on that vehicle's
-  tablet, linking Tiger One's vehicle record to Traccar's device record.
+- **/vehicles** has a Traccar device ID field per vehicle — this is the
+  identifier typed into Traccar Client on that vehicle's tablet, linking
+  Tiger One's vehicle record to Traccar's device record.
 - A background task polls Traccar's REST API every 30 seconds and updates
-  each linked vehicle's last known position — but only starts at all if
+  each linked vehicle's last known position — only runs at all if
   `TRACCAR_URL`, `TRACCAR_USERNAME` and `TRACCAR_PASSWORD` are set as
-  environment variables. Until they are, this is a complete no-op, not
-  even a background task — nothing to break, nothing running.
-- Traccar's REST API keys positions by its own internal numeric device
-  id, not the friendly identifier typed into Traccar Client — the sync
-  logic bridges the two via Traccar's devices list. This was the trickiest
-  part to get right, and it's specifically tested for.
-- A Traccar outage (or it simply not being configured yet) never breaks
+  environment variables.
+- **/vehicles/map** shows every vehicle with a known position as a live
+  pin (Leaflet + OpenStreetMap, no API key needed), auto-refreshing.
+- A Traccar outage (or it simply not being configured) never breaks
   anything else — same principle as the Xero integration.
 
-**Not built yet**: a live map showing vehicle positions (currently just
-shows "last seen HH:MM" on the Vehicles page), and ETA calculation
-(needs a routing API — e.g. Google Directions — fed with the live
-position plus the delivery address). Natural next pieces once a real
-Traccar server is up and reporting.
+**ETA on the dashboard's job cards** — once a delivery is En Route and
+its vehicle has a recent position, the job card shows "ETA n min" next
+to the status pill. Calculated using free OpenStreetMap-ecosystem
+services deliberately, not Google — **Nominatim** to turn the site
+address into coordinates (geocoded once per order, then cached, not
+re-looked-up on every calculation) and **OSRM** for the actual driving
+time. Both are the public demo servers, not self-hosted — fine for
+testing at low volume, but worth moving to a self-hosted or paid
+instance before relying on this at real commercial scale, since the
+public ones are rate-limited with no uptime guarantee.
+
+Both calls are wired into the *same* 30-second background cycle that
+already syncs Traccar positions — not triggered by a dashboard page
+load — specifically so refreshing the dashboard (or several people
+having it open at once) never hammers those free public services.
+A vehicle that hasn't reported a position in the last 10 minutes is
+skipped rather than shown a stale, misleading ETA.
+
+I could not test the live OSRM/Nominatim calls myself — this sandbox
+can't reach those public servers either, same limitation hit with the
+POD map image earlier. What's tested and proven: the caching, the
+10-minute staleness cutoff, the En-Route-only gating, and that a
+routing failure never breaks the dashboard (all with a simulated
+routing service, mirroring the Traccar/Xero test pattern). The actual
+"does a real address resolve to a real ETA" question is the one thing
+that needs a real check once this is live.
 
 ## Xero
 

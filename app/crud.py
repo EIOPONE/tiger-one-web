@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from . import models
 from . import xero_client
 from . import traccar_client
+from . import routing_client
 from .security import hash_password, verify_password, new_access_token
 
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID", "")
@@ -794,6 +795,58 @@ def reorder_deliveries(db: Session, delivery_ids_in_order: list[int]) -> None:
     db.flush()
 
 
+def get_or_geocode_site_location(db: Session, order: models.Order) -> tuple[float, float] | None:
+    """Cached geocode of an order's site address — resolves via Nominatim
+    once, then reuses the stored result on every later call, rather than
+    re-geocoding the same address repeatedly."""
+    if order.site_latitude is not None and order.site_longitude is not None:
+        return float(order.site_latitude), float(order.site_longitude)
+    result = routing_client.geocode_address(order.site_address)
+    if result:
+        order.site_latitude, order.site_longitude = result
+        db.flush()
+    return result
+
+
+def refresh_etas_for_active_deliveries(db: Session) -> int:
+    """Recomputes ETA for every En Route delivery that has a vehicle with
+    a known position — called from the same background loop that syncs
+    Traccar positions, not on every dashboard page load, to avoid
+    hammering the free public routing/geocoding services. Returns how
+    many were updated. Best-effort per delivery: one bad address or a
+    routing failure never stops the rest from updating."""
+    deliveries = list(db.scalars(
+        select(models.Delivery).where(models.Delivery.status == "En Route", models.Delivery.vehicle_id.isnot(None))
+    ))
+    updated = 0
+    for delivery in deliveries:
+        try:
+            vehicle = db.get(models.Vehicle, delivery.vehicle_id)
+            if not vehicle or vehicle.last_latitude is None or vehicle.last_longitude is None:
+                continue
+            # Skip a vehicle that hasn't reported in a while — showing an
+            # ETA computed from a stale position would be misleading.
+            if not vehicle.last_position_at or (datetime.now(timezone.utc) - vehicle.last_position_at.replace(tzinfo=timezone.utc)) > timedelta(minutes=10):
+                continue
+            order = delivery.order
+            destination = get_or_geocode_site_location(db, order)
+            if not destination:
+                continue
+            eta_seconds = routing_client.get_eta_seconds(
+                float(vehicle.last_latitude), float(vehicle.last_longitude), destination[0], destination[1],
+            )
+            if eta_seconds is None:
+                continue
+            delivery.eta_minutes = round(eta_seconds / 60)
+            delivery.eta_updated_at = datetime.now(timezone.utc)
+            updated += 1
+        except Exception:
+            continue  # one bad delivery never stops the rest
+    if updated:
+        db.flush()
+    return updated
+
+
 def todays_jobs(db: Session, today: str) -> list[dict]:
     """Every order requested for today, with its driver/vehicle if a delivery
     has been scheduled — this is what the home screen shows so the office
@@ -815,6 +868,7 @@ def todays_jobs(db: Session, today: str) -> list[dict]:
             "driver_name": delivery.driver_name if delivery else "",
             "vehicle": delivery.vehicle if delivery else "",
             "status": delivery.status if delivery else order.status,
+            "eta_minutes": delivery.eta_minutes if delivery else None,
         })
     return jobs
 
