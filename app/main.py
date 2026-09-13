@@ -513,10 +513,13 @@ def kanban_page(request: Request, board_date: str = "", db: Session = Depends(db
             unassigned_deliveries.append(delivery)
         else:
             by_driver.setdefault(delivery.driver_user_id, []).append(delivery)
+    for driver_id in by_driver:
+        by_driver[driver_id].sort(key=lambda d: d.sequence)
     return templates.TemplateResponse(request, "kanban.html", {
         "user": user, "active": "kanban", "board_date": board_date,
         "drivers": drivers, "unassigned_orders": unassigned_orders,
         "unassigned_deliveries": unassigned_deliveries, "by_driver": by_driver,
+        "vehicles": crud.list_vehicles(db),
     })
 
 
@@ -559,6 +562,33 @@ def kanban_unassign(request: Request, delivery_id: int = Form(...), db: Session 
         crud.unassign_delivery(db, delivery_id)
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True}
+
+
+@app.post("/kanban/set-vehicle")
+def kanban_set_vehicle(request: Request, delivery_id: int = Form(...), vehicle_id: str = Form(""),
+                        db: Session = Depends(db_dependency)):
+    """The vehicle picker directly on a card — doesn't touch the driver,
+    only the truck."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        crud.reassign_delivery(db, delivery_id, driver_user_id=None, vehicle_id=int(vehicle_id) if vehicle_id else None)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True}
+
+
+@app.post("/kanban/reorder")
+def kanban_reorder(request: Request, delivery_ids: str = Form(...), db: Session = Depends(db_dependency)):
+    """Dragging cards up/down within a driver's column — delivery_ids is
+    a comma-separated list in the new order."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    ids = [int(x) for x in delivery_ids.split(",") if x.strip()]
+    crud.reorder_deliveries(db, ids)
     return {"ok": True}
 
 

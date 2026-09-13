@@ -163,6 +163,22 @@ anywhere, since nothing was grouping them. The Orders page has the same
 capability too (an "Unassign driver" button next to Reassign), for
 anyone who'd rather not use the drag board for this.
 
+**Vehicle picker directly on each card.** Fixes a second real bug: the
+original quick-schedule drag action didn't capture a vehicle at all, so
+jobs scheduled from the board came out with no truck assigned. Rather
+than complicating the drag gesture itself, each card now has its own
+vehicle dropdown — pick one any time, no need to leave the board or
+touch the Orders page.
+
+**Cards can be dragged up and down within a driver's column** to set
+priority order for the day — and the driver's own dashboard genuinely
+follows that order, not just the office's view of it. Verified live: a
+driver's job list started in creation order (Job 1, 2, 3), the office
+reordered to (3, 1, 2) on the board, and the driver's actual dashboard —
+not the kanban data, the real page they'd see — updated to match.
+Newly scheduled or reassigned jobs land at the end of a driver's queue
+by default, not at an arbitrary position or overwriting what's there.
+
 ## Fleet, reassignment, and completion notifications
 
 - **Vehicles** (`/vehicles`) — the fleet, added once. Scheduling and

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Job Board — Tiger One{% endblock %}
 {% block page_title %}Job board{% endblock %}
-{% block page_subtitle %}Drag a job into a driver's column to assign it, or between columns to reassign. Updates the driver's app automatically.{% endblock %}
+{% block page_subtitle %}Drag a job into a driver's column to assign it, between columns to reassign, or up/down within a column to set priority order.{% endblock %}
 {% block page_actions %}
 <form method="get" action="/kanban" style="display:flex;gap:8px;align-items:center;">
   <input type="date" name="board_date" value="{{ board_date }}" onchange="this.form.submit()">
@@ -20,7 +20,8 @@
   .card .order-no { font-weight: 700; color: var(--ink); }
   .card .customer { color: var(--muted); margin-top: 2px; }
   .card .site { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .card .status-row { margin-top: 8px; }
+  .card .status-row { margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .card select.vehicle-select { font-size: 12px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); }
   .empty-col { color: var(--muted); font-size: 12px; text-align: center; padding: 16px 0; }
 </style>
 
@@ -39,7 +40,13 @@
       <div class="order-no">{{ delivery.order.order_number }}</div>
       <div class="customer">{{ delivery.order.customer.display_name }}</div>
       <div class="site">{{ delivery.order.site_address }}</div>
-      <div class="status-row"><span class="pill pill-scheduled">Not yet assigned</span></div>
+      <div class="status-row">
+        <span class="pill pill-scheduled">Not yet assigned</span>
+        <select class="vehicle-select" data-delivery-id="{{ delivery.delivery_id }}">
+          <option value="">Vehicle…</option>
+          {% for v in vehicles %}<option value="{{ v.vehicle_id }}" {{ 'selected' if delivery.vehicle_id == v.vehicle_id }}>{{ v.registration }}</option>{% endfor %}
+        </select>
+      </div>
     </div>
     {% endfor %}
     {% if not unassigned_orders and not unassigned_deliveries %}
@@ -56,7 +63,17 @@
       <div class="order-no">{{ delivery.order.order_number }}</div>
       <div class="customer">{{ delivery.order.customer.display_name }}</div>
       <div class="site">{{ delivery.order.site_address }}</div>
-      <div class="status-row"><span class="pill pill-{{ delivery.status|lower|replace(' ', '-') }}">{{ delivery.status }}</span></div>
+      <div class="status-row">
+        <span class="pill pill-{{ delivery.status|lower|replace(' ', '-') }}">{{ delivery.status }}</span>
+        {% if delivery.status != 'Delivered' %}
+        <select class="vehicle-select" data-delivery-id="{{ delivery.delivery_id }}">
+          <option value="">Vehicle…</option>
+          {% for v in vehicles %}<option value="{{ v.vehicle_id }}" {{ 'selected' if delivery.vehicle_id == v.vehicle_id }}>{{ v.registration }}</option>{% endfor %}
+        </select>
+        {% elif delivery.vehicle %}
+        <span class="muted" style="font-size:12px;">{{ delivery.vehicle }}</span>
+        {% endif %}
+      </div>
     </div>
     {% else %}
     <div class="empty-col">No jobs</div>
@@ -68,48 +85,97 @@
 <script>
   const board = document.getElementById('board');
   let dragged = null;
+  let sourceColumn = null;
+
+  function getDragAfterElement(column, y) {
+    const cards = [...column.querySelectorAll('.card:not(.dragging)')];
+    return cards.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset: offset, element: child };
+      }
+      return closest;
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+  }
 
   board.querySelectorAll('.card[draggable="true"]').forEach(card => {
-    card.addEventListener('dragstart', () => { dragged = card; card.classList.add('dragging'); });
+    card.addEventListener('dragstart', () => {
+      dragged = card;
+      sourceColumn = card.closest('.col');
+      card.classList.add('dragging');
+    });
     card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragged = null; });
   });
 
   board.querySelectorAll('.col').forEach(col => {
-    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
-    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      col.classList.add('drag-over');
+      if (!dragged) return;
+      const afterElement = getDragAfterElement(col, e.clientY);
+      if (afterElement == null) col.appendChild(dragged);
+      else col.insertBefore(dragged, afterElement);
+    });
+    col.addEventListener('dragleave', (e) => { if (e.target === col) col.classList.remove('drag-over'); });
+
     col.addEventListener('drop', async (e) => {
       e.preventDefault();
       col.classList.remove('drag-over');
       if (!dragged) return;
 
       const type = dragged.dataset.type;
-      const columnType = col.dataset.column;
+      const targetType = col.dataset.column;
+      const sameColumn = sourceColumn === col;
+      let ok = true;
 
-      let ok = false;
-
-      if (columnType === 'unassigned') {
-        if (type === 'delivery') {
-          const fd = new URLSearchParams({ delivery_id: dragged.dataset.deliveryId });
-          const res = await fetch('/kanban/unassign', { method: 'POST', body: fd });
-          ok = res.ok;
-          if (!ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'Could not unassign that job.'); }
+      if (!sameColumn) {
+        if (targetType === 'unassigned') {
+          if (type === 'delivery') {
+            const fd = new URLSearchParams({ delivery_id: dragged.dataset.deliveryId });
+            const res = await fetch('/kanban/unassign', { method: 'POST', body: fd });
+            ok = res.ok;
+            if (!ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'Could not unassign that job.'); }
+          }
+        } else {
+          const driverId = col.dataset.driverId;
+          if (type === 'order') {
+            const fd = new URLSearchParams({ order_id: dragged.dataset.orderId, driver_id: driverId, board_date: '{{ board_date }}' });
+            const res = await fetch('/kanban/schedule', { method: 'POST', body: fd });
+            ok = res.ok;
+          } else if (type === 'delivery') {
+            const fd = new URLSearchParams({ delivery_id: dragged.dataset.deliveryId, driver_id: driverId });
+            const res = await fetch('/kanban/reassign', { method: 'POST', body: fd });
+            ok = res.ok;
+            if (!ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'Could not reassign that job.'); }
+          }
         }
-        // dragging an unscheduled order back onto Unassigned is a no-op — it's already there
-      } else {
-        const driverId = col.dataset.driverId;
-        if (type === 'order') {
-          const fd = new URLSearchParams({ order_id: dragged.dataset.orderId, driver_id: driverId, board_date: '{{ board_date }}' });
-          const res = await fetch('/kanban/schedule', { method: 'POST', body: fd });
-          ok = res.ok;
-        } else if (type === 'delivery') {
-          const fd = new URLSearchParams({ delivery_id: dragged.dataset.deliveryId, driver_id: driverId });
-          const res = await fetch('/kanban/reassign', { method: 'POST', body: fd });
-          ok = res.ok;
-          if (!ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'Could not reassign that job.'); }
+      }
+
+      // Whether it moved columns or just reordered within one, persist
+      // the resulting order of delivery cards in the target driver
+      // column (irrelevant for the Unassigned column — no priority
+      // order there).
+      if (ok && targetType === 'driver') {
+        const ids = [...col.querySelectorAll('.card[data-type="delivery"]')].map(c => c.dataset.deliveryId);
+        if (ids.length) {
+          await fetch('/kanban/reorder', { method: 'POST', body: new URLSearchParams({ delivery_ids: ids.join(',') }) });
         }
       }
 
       if (ok) location.reload();
+    });
+  });
+
+  // Vehicle picker on each card — stop the card's own drag gesture from
+  // hijacking clicks on the dropdown, then save on change.
+  board.querySelectorAll('.vehicle-select').forEach(select => {
+    select.addEventListener('mousedown', (e) => e.stopPropagation());
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', async () => {
+      const fd = new URLSearchParams({ delivery_id: select.dataset.deliveryId, vehicle_id: select.value });
+      const res = await fetch('/kanban/set-vehicle', { method: 'POST', body: fd });
+      if (res.ok) location.reload();
     });
   });
 </script>

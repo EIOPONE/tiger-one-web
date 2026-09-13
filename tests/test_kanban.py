@@ -188,3 +188,102 @@ def test_cannot_unassign_a_delivered_run(db):
     except ValueError:
         pass
     assert delivery.driver_user_id == driver.user_id  # unchanged
+
+
+def test_scheduling_captures_vehicle(db):
+    """The bug this session fixed: scheduling via the kanban drag used to
+    silently drop the vehicle. Confirms create_delivery still saves one
+    when given, and it's visible on the resulting board data."""
+    order = _confirmed_order(db, requested_date="2026-09-10")
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    vehicle = crud.save_vehicle(db, "TC01")
+    db.commit()
+
+    delivery = crud.create_delivery(
+        db, order.order_id, driver_user_id=driver.user_id,
+        vehicle_id=vehicle.vehicle_id, scheduled_date=date(2026, 9, 10),
+    )
+    db.commit()
+    assert delivery.vehicle_id == vehicle.vehicle_id
+    assert delivery.vehicle == "TC01"
+
+
+def test_set_vehicle_via_kanban_card_does_not_touch_driver(db):
+    """The new per-card vehicle picker — must only change the vehicle,
+    never accidentally reassign the driver (reuses reassign_delivery
+    with driver_user_id=None, which must be a true no-op on the driver)."""
+    order = _confirmed_order(db)
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    vehicle = crud.save_vehicle(db, "TC01")
+    db.commit()
+    delivery = crud.create_delivery(db, order.order_id, driver_user_id=driver.user_id)
+    db.commit()
+    assert delivery.vehicle_id is None
+
+    crud.reassign_delivery(db, delivery.delivery_id, driver_user_id=None, vehicle_id=vehicle.vehicle_id)
+    db.commit()
+
+    assert delivery.vehicle_id == vehicle.vehicle_id
+    assert delivery.driver_user_id == driver.user_id  # unchanged
+
+
+def test_new_jobs_land_at_the_end_of_a_drivers_queue(db):
+    """A driver's second job of the day must default to after the first,
+    not overwrite or randomly interleave with it."""
+    order1 = _confirmed_order(db, suffix="A", requested_date="2026-09-10")
+    order2 = _confirmed_order(db, suffix="B", requested_date="2026-09-10")
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    d1 = crud.create_delivery(db, order1.order_id, driver_user_id=driver.user_id, scheduled_date=date(2026, 9, 10))
+    d2 = crud.create_delivery(db, order2.order_id, driver_user_id=driver.user_id, scheduled_date=date(2026, 9, 10))
+    db.commit()
+
+    assert d2.sequence > d1.sequence
+    jobs = crud.deliveries_for_driver(db, driver.user_id)
+    assert [j.delivery_id for j in jobs] == [d1.delivery_id, d2.delivery_id]
+
+
+def test_reorder_deliveries_changes_driver_view_order(db):
+    """The actual described need: office sets a priority order, the
+    driver's own job list follows it."""
+    order1 = _confirmed_order(db, suffix="A", requested_date="2026-09-10")
+    order2 = _confirmed_order(db, suffix="B", requested_date="2026-09-10")
+    order3 = _confirmed_order(db, suffix="C", requested_date="2026-09-10")
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+
+    d1 = crud.create_delivery(db, order1.order_id, driver_user_id=driver.user_id, scheduled_date=date(2026, 9, 10))
+    d2 = crud.create_delivery(db, order2.order_id, driver_user_id=driver.user_id, scheduled_date=date(2026, 9, 10))
+    d3 = crud.create_delivery(db, order3.order_id, driver_user_id=driver.user_id, scheduled_date=date(2026, 9, 10))
+    db.commit()
+    assert [j.delivery_id for j in crud.deliveries_for_driver(db, driver.user_id)] == [d1.delivery_id, d2.delivery_id, d3.delivery_id]
+
+    # Office decides job 3 is actually the most urgent, reorders: 3, 1, 2
+    crud.reorder_deliveries(db, [d3.delivery_id, d1.delivery_id, d2.delivery_id])
+    db.commit()
+
+    jobs = crud.deliveries_for_driver(db, driver.user_id)
+    assert [j.delivery_id for j in jobs] == [d3.delivery_id, d1.delivery_id, d2.delivery_id]
+
+
+def test_reassigning_to_a_new_driver_puts_it_at_the_end_of_their_queue(db):
+    """Dragging a card to a different driver shouldn't carry over its old
+    sequence number and land it in an arbitrary spot in the new queue."""
+    order1 = _confirmed_order(db, suffix="A", requested_date="2026-09-10")
+    order2 = _confirmed_order(db, suffix="B", requested_date="2026-09-10")
+    dan = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    sam = crud.create_driver(db, "Sam Driver", "sam", "1234")
+    db.commit()
+
+    # Sam already has one job today.
+    sam_job = crud.create_delivery(db, order1.order_id, driver_user_id=sam.user_id, scheduled_date=date(2026, 9, 10))
+    # Dan's job gets reassigned to Sam.
+    dan_job = crud.create_delivery(db, order2.order_id, driver_user_id=dan.user_id, scheduled_date=date(2026, 9, 10))
+    db.commit()
+
+    crud.reassign_delivery(db, dan_job.delivery_id, driver_user_id=sam.user_id, vehicle_id=None)
+    db.commit()
+
+    jobs = crud.deliveries_for_driver(db, sam.user_id)
+    assert [j.delivery_id for j in jobs] == [sam_job.delivery_id, dan_job.delivery_id]  # appended, not jumbled

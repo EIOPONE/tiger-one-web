@@ -621,10 +621,23 @@ def create_delivery(
     if vehicle_id and not vehicle:
         vehicle_row = db.get(models.Vehicle, vehicle_id)
         vehicle = vehicle_row.registration if vehicle_row else ""
+    resolved_date = scheduled_date or datetime.now(timezone.utc).date()
+    next_sequence = 0
+    if driver_user_id:
+        # Lands at the end of that driver's day by default — dragged
+        # into a specific position afterwards if it needs to jump the
+        # queue.
+        max_sequence = db.scalar(
+            select(func.max(models.Delivery.sequence)).where(
+                models.Delivery.driver_user_id == driver_user_id,
+                models.Delivery.scheduled_date == resolved_date,
+            )
+        )
+        next_sequence = (max_sequence or 0) + 1
     delivery = models.Delivery(
         order_id=order_id, driver_user_id=driver_user_id, driver_name=driver_name,
         vehicle_id=vehicle_id, vehicle=vehicle,
-        scheduled_date=scheduled_date or datetime.now(timezone.utc).date(),
+        scheduled_date=resolved_date, sequence=next_sequence,
         status="Scheduled", access_token=new_access_token(),
     )
     db.add(delivery)
@@ -648,6 +661,16 @@ def reassign_delivery(
         driver = db.get(models.AppUser, driver_user_id)
         delivery.driver_user_id = driver_user_id
         delivery.driver_name = driver.full_name if driver else ""
+        # Lands at the end of the new driver's day by default — same
+        # principle as a freshly-scheduled job.
+        max_sequence = db.scalar(
+            select(func.max(models.Delivery.sequence)).where(
+                models.Delivery.driver_user_id == driver_user_id,
+                models.Delivery.scheduled_date == delivery.scheduled_date,
+                models.Delivery.delivery_id != delivery.delivery_id,
+            )
+        )
+        delivery.sequence = (max_sequence or 0) + 1
     if vehicle_id:
         vehicle_row = db.get(models.Vehicle, vehicle_id)
         delivery.vehicle_id = vehicle_id
@@ -750,11 +773,25 @@ def deactivate_vehicle(db: Session, vehicle_id: int) -> None:
 
 
 def deliveries_for_driver(db: Session, driver_user_id: int, include_delivered: bool = False) -> list[models.Delivery]:
-    """A driver's own jobs — what their dashboard shows after they log in."""
+    """A driver's own jobs — what their dashboard shows after they log in.
+    Ordered by the office's priority sequence within each day, not just
+    creation order, so the driver actually sees jobs in the order
+    they're meant to be done."""
     query = select(models.Delivery).where(models.Delivery.driver_user_id == driver_user_id)
     if not include_delivered:
         query = query.where(models.Delivery.status != "Delivered", models.Delivery.status != "Cancelled")
-    return list(db.scalars(query.order_by(models.Delivery.scheduled_date, models.Delivery.delivery_id)))
+    return list(db.scalars(query.order_by(models.Delivery.scheduled_date, models.Delivery.sequence)))
+
+
+def reorder_deliveries(db: Session, delivery_ids_in_order: list[int]) -> None:
+    """Sets each delivery's sequence to its position in the given list —
+    called after dragging cards into a new order within a driver's
+    column on the kanban board."""
+    for index, delivery_id in enumerate(delivery_ids_in_order):
+        delivery = db.get(models.Delivery, delivery_id)
+        if delivery:
+            delivery.sequence = index
+    db.flush()
 
 
 def todays_jobs(db: Session, today: str) -> list[dict]:

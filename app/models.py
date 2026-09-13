@@ -276,6 +276,11 @@ class Delivery(Base):
     vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
     vehicle = Column(String, nullable=False, default="")  # kept as a display fallback for legacy free-text entries
     scheduled_date = Column(Date, nullable=True)
+    # Order within a driver's day — set when scheduled, changed by
+    # dragging cards up/down within a column on the kanban board. Lets a
+    # driver's own job list follow the office's priority order, not just
+    # whatever order jobs happened to be created in.
+    sequence = Column(Integer, nullable=False, default=0)
     status = Column(String, nullable=False, default="Scheduled")
     access_token = Column(String, nullable=False, unique=True)  # driver's link, no login needed
     pod_signed_by = Column(String, nullable=False, default="")
