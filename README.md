@@ -152,6 +152,17 @@ two real driver accounts: reassigning a job from one driver to another
 correctly empties it from the first driver's list and adds it to the
 second's, not just on the office's board.
 
+**Scheduling no longer requires knowing the driver upfront.** A job can
+be confirmed for a date with just a date (and optionally a vehicle) and
+no driver at all — it sits in the Unassigned column, exactly like an
+order that hasn't been scheduled at all, until it's dragged onto a
+driver. A job can also be dragged *back* to Unassigned if a driver falls
+through — this fixed a real bug along the way: driverless deliveries
+used to silently vanish from the board entirely rather than showing up
+anywhere, since nothing was grouping them. The Orders page has the same
+capability too (an "Unassign driver" button next to Reassign), for
+anyone who'd rather not use the drag board for this.
+
 ## Fleet, reassignment, and completion notifications
 
 - **Vehicles** (`/vehicles`) — the fleet, added once. Scheduling and

@@ -656,6 +656,22 @@ def reassign_delivery(
     return delivery
 
 
+def unassign_delivery(db: Session, delivery_id: int) -> models.Delivery:
+    """Removes the driver from a scheduled/en-route delivery without
+    cancelling the job itself — sends it back to the Unassigned column on
+    the kanban board for when a job needs to move but it's not yet known
+    who'll do it. Same 'not once Delivered' rule as reassign_delivery."""
+    delivery = db.get(models.Delivery, delivery_id)
+    if not delivery:
+        raise ValueError("Delivery not found")
+    if delivery.status == "Delivered":
+        raise ValueError("Can't unassign a delivery that's already been signed off")
+    delivery.driver_user_id = None
+    delivery.driver_name = ""
+    db.flush()
+    return delivery
+
+
 def get_delivery(db: Session, delivery_id: int) -> models.Delivery | None:
     return db.get(models.Delivery, delivery_id)
 

@@ -116,3 +116,75 @@ def test_active_delivery_ids_excludes_delivered(db):
     crud.record_pod(db, delivery, "Site Foreman", "sig.png", "", None, None)
     db.commit()
     assert delivery.delivery_id not in crud.active_delivery_ids_for_driver(db, driver.user_id)
+
+
+def test_schedule_without_a_driver_leaves_it_unassigned(db):
+    """Office can now schedule a job (date/vehicle known) before it's
+    known who's actually doing it — it shows up driverless, not blocked."""
+    order = _confirmed_order(db, requested_date="2026-09-10")
+    db.commit()
+
+    delivery = crud.create_delivery(db, order.order_id, scheduled_date=date(2026, 9, 10))
+    db.commit()
+    assert delivery.driver_user_id is None
+    assert delivery.driver_name == ""
+
+    # It must surface in deliveries_for_date so the kanban board can show
+    # it in the Unassigned column, not silently disappear.
+    day_deliveries = crud.deliveries_for_date(db, date(2026, 9, 10))
+    assert len(day_deliveries) == 1
+    assert day_deliveries[0].driver_user_id is None
+
+
+def test_unassign_delivery_removes_the_driver(db):
+    order = _confirmed_order(db)
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+    delivery = crud.create_delivery(db, order.order_id, driver_user_id=driver.user_id)
+    db.commit()
+    assert delivery.driver_user_id == driver.user_id
+
+    crud.unassign_delivery(db, delivery.delivery_id)
+    db.commit()
+
+    assert delivery.driver_user_id is None
+    assert delivery.driver_name == ""
+    # gone from that driver's active list, and from the notification snapshot too
+    assert delivery.delivery_id not in crud.active_delivery_ids_for_driver(db, driver.user_id)
+
+
+def test_unassign_then_reassign_round_trip(db):
+    """The actual described workflow: unassign a job, it shows up
+    unassigned, then it gets picked up by (possibly a different) driver."""
+    order = _confirmed_order(db, requested_date="2026-09-10")
+    dan = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    sam = crud.create_driver(db, "Sam Driver", "sam", "1234")
+    db.commit()
+    delivery = crud.create_delivery(db, order.order_id, driver_user_id=dan.user_id, scheduled_date=date(2026, 9, 10))
+    db.commit()
+
+    crud.unassign_delivery(db, delivery.delivery_id)
+    db.commit()
+    assert delivery.driver_user_id is None
+
+    crud.reassign_delivery(db, delivery.delivery_id, driver_user_id=sam.user_id, vehicle_id=None)
+    db.commit()
+    assert delivery.driver_user_id == sam.user_id
+    assert delivery.delivery_id in crud.active_delivery_ids_for_driver(db, sam.user_id)
+
+
+def test_cannot_unassign_a_delivered_run(db):
+    order = _confirmed_order(db)
+    driver = crud.create_driver(db, "Dan Driver", "dan", "4821")
+    db.commit()
+    delivery = crud.create_delivery(db, order.order_id, driver_user_id=driver.user_id)
+    db.commit()
+    crud.record_pod(db, delivery, "Site Foreman", "sig.png", "", None, None)
+    db.commit()
+
+    try:
+        crud.unassign_delivery(db, delivery.delivery_id)
+        assert False, "expected a ValueError"
+    except ValueError:
+        pass
+    assert delivery.driver_user_id == driver.user_id  # unchanged
