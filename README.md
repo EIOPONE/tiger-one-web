@@ -130,6 +130,28 @@ Built as a flexible date range rather than a fixed "weekly" report so it
 covers weekly, monthly, or any custom period
 without needing separate buttons for each.
 
+## Job board (kanban)
+
+**/kanban** — a drag-and-drop view of a chosen day: an "Unassigned"
+column for Confirmed orders due that day with no driver yet, and one
+column per driver showing what's scheduled for them. Two drag actions:
+
+- **Unassigned → a driver's column**: schedules that order to them for
+  the selected date (no vehicle picked here, to keep the drag quick —
+  add one on the Orders page afterwards if needed).
+- **One driver's column → another's**: reassigns the job, reusing the
+  same `reassign_delivery` logic already in place — so it's blocked once
+  a job's already been signed off, same as before.
+
+**The driver's own app picks up the change automatically.** Their
+dashboard polls a small endpoint every 15 seconds comparing their current
+job list against what was there when the page loaded; if it's changed
+(reassigned away, or a new job scheduled to them), a banner appears —
+"🔄 Your job list has been updated — tap to refresh." Verified live with
+two real driver accounts: reassigning a job from one driver to another
+correctly empties it from the first driver's list and adds it to the
+second's, not just on the office's board.
+
 ## Fleet, reassignment, and completion notifications
 
 - **Vehicles** (`/vehicles`) — the fleet, added once. Scheduling and

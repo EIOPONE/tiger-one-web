@@ -497,6 +497,62 @@ def quote_pdf_route(quote_id: int, request: Request, db: Session = Depends(db_de
                      headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
+@app.get("/kanban", response_class=HTMLResponse)
+def kanban_page(request: Request, board_date: str = "", db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    board_date = board_date or date.today().isoformat()
+    drivers = crud.list_drivers(db)
+    unassigned = crud.unscheduled_confirmed_orders(db, board_date)
+    deliveries = crud.deliveries_for_date(db, date.fromisoformat(board_date))
+    by_driver: dict = {d.user_id: [] for d in drivers}
+    for delivery in deliveries:
+        by_driver.setdefault(delivery.driver_user_id, []).append(delivery)
+    return templates.TemplateResponse(request, "kanban.html", {
+        "user": user, "active": "kanban", "board_date": board_date,
+        "drivers": drivers, "unassigned": unassigned, "by_driver": by_driver,
+    })
+
+
+@app.post("/kanban/schedule")
+def kanban_schedule(request: Request, order_id: int = Form(...), driver_id: int = Form(...),
+                     board_date: str = Form(...), db: Session = Depends(db_dependency)):
+    """Dragging an unassigned order into a driver's column — schedules it
+    for that driver on that date. No vehicle picked here on purpose, to
+    keep the drag-and-drop quick; a vehicle can be added on the Orders
+    page afterwards if needed."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.create_delivery(db, order_id, driver_user_id=driver_id, scheduled_date=date.fromisoformat(board_date))
+    return {"ok": True}
+
+
+@app.post("/kanban/reassign")
+def kanban_reassign(request: Request, delivery_id: int = Form(...), driver_id: int = Form(...),
+                     db: Session = Depends(db_dependency)):
+    """Dragging a card from one driver's column to another."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        crud.reassign_delivery(db, delivery_id, driver_user_id=driver_id, vehicle_id=None)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True}
+
+
+@app.get("/api/driver/jobs-snapshot")
+def driver_jobs_snapshot(request: Request, db: Session = Depends(db_dependency)):
+    """Polled by the driver's own dashboard to notice its job list has
+    changed (reassigned, newly scheduled) without a manual refresh."""
+    user = get_user_or_none(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return {"delivery_ids": crud.active_delivery_ids_for_driver(db, user.user_id)}
+
+
 @app.get("/orders", response_class=HTMLResponse)
 def orders_page(request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)

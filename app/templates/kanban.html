@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Job Board — Tiger One{% endblock %}
+{% block page_title %}Job board{% endblock %}
+{% block page_subtitle %}Drag a job into a driver's column to assign it, or between columns to reassign. Updates the driver's app automatically.{% endblock %}
+{% block page_actions %}
+<form method="get" action="/kanban" style="display:flex;gap:8px;align-items:center;">
+  <input type="date" name="board_date" value="{{ board_date }}" onchange="this.form.submit()">
+</form>
+{% endblock %}
+{% block content %}
+
+<style>
+  .board { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 12px; }
+  .col { flex: 0 0 260px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 200px; }
+  .col.drag-over { background: var(--soft-orange); border-color: var(--orange); }
+  .col-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: grab; font-size: 13px; }
+  .card:active { cursor: grabbing; }
+  .card.dragging { opacity: 0.4; }
+  .card .order-no { font-weight: 700; color: var(--ink); }
+  .card .customer { color: var(--muted); margin-top: 2px; }
+  .card .site { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .card .status-row { margin-top: 8px; }
+  .empty-col { color: var(--muted); font-size: 12px; text-align: center; padding: 16px 0; }
+</style>
+
+<div class="board" id="board">
+  <div class="col" data-column="unassigned">
+    <div class="col-title">Unassigned <span>{{ unassigned|length }}</span></div>
+    {% for o in unassigned %}
+    <div class="card" draggable="true" data-order-id="{{ o.order_id }}" data-type="order">
+      <div class="order-no">{{ o.order_number }}</div>
+      <div class="customer">{{ o.customer.display_name }}</div>
+      <div class="site">{{ o.site_address }}</div>
+    </div>
+    {% else %}
+    <div class="empty-col">Nothing unassigned</div>
+    {% endfor %}
+  </div>
+
+  {% for d in drivers %}
+  <div class="col" data-column="driver" data-driver-id="{{ d.user_id }}">
+    <div class="col-title">{{ d.full_name }} <span>{{ by_driver.get(d.user_id, [])|length }}</span></div>
+    {% for delivery in by_driver.get(d.user_id, []) %}
+    <div class="card" draggable="{{ 'false' if delivery.status == 'Delivered' else 'true' }}"
+         data-delivery-id="{{ delivery.delivery_id }}" data-type="delivery">
+      <div class="order-no">{{ delivery.order.order_number }}</div>
+      <div class="customer">{{ delivery.order.customer.display_name }}</div>
+      <div class="site">{{ delivery.order.site_address }}</div>
+      <div class="status-row"><span class="pill pill-{{ delivery.status|lower|replace(' ', '-') }}">{{ delivery.status }}</span></div>
+    </div>
+    {% else %}
+    <div class="empty-col">No jobs</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+  const board = document.getElementById('board');
+  let dragged = null;
+
+  board.querySelectorAll('.card[draggable="true"]').forEach(card => {
+    card.addEventListener('dragstart', () => { dragged = card; card.classList.add('dragging'); });
+    card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragged = null; });
+  });
+
+  board.querySelectorAll('.col').forEach(col => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      if (!dragged) return;
+
+      const type = dragged.dataset.type;
+      const columnType = col.dataset.column;
+      if (columnType === 'unassigned') return;  // dropping back to Unassigned isn't supported yet
+
+      const driverId = col.dataset.driverId;
+      let ok = false;
+
+      if (type === 'order') {
+        const fd = new URLSearchParams({ order_id: dragged.dataset.orderId, driver_id: driverId, board_date: '{{ board_date }}' });
+        const res = await fetch('/kanban/schedule', { method: 'POST', body: fd });
+        ok = res.ok;
+      } else if (type === 'delivery') {
+        const fd = new URLSearchParams({ delivery_id: dragged.dataset.deliveryId, driver_id: driverId });
+        const res = await fetch('/kanban/reassign', { method: 'POST', body: fd });
+        ok = res.ok;
+        if (!ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'Could not reassign that job.'); }
+      }
+
+      if (ok) location.reload();
+    });
+  });
+</script>
+
+{% endblock %}

@@ -660,6 +660,41 @@ def get_delivery(db: Session, delivery_id: int) -> models.Delivery | None:
     return db.get(models.Delivery, delivery_id)
 
 
+# --- kanban job board -------------------------------------------------------------------
+
+def unscheduled_confirmed_orders(db: Session, for_date: str) -> list[models.Order]:
+    """Confirmed orders due on this date with no delivery scheduled yet —
+    the 'Unassigned' column on the kanban board."""
+    return list(db.scalars(
+        select(models.Order)
+        .where(models.Order.status == "Confirmed", models.Order.requested_date == for_date)
+        .where(~models.Order.deliveries.any())
+        .order_by(models.Order.order_number)
+    ))
+
+
+def deliveries_for_date(db: Session, for_date) -> list[models.Delivery]:
+    """Every non-cancelled delivery scheduled for a given date, across all
+    drivers — the driver columns on the kanban board."""
+    return list(db.scalars(
+        select(models.Delivery)
+        .where(models.Delivery.scheduled_date == for_date, models.Delivery.status != "Cancelled")
+        .order_by(models.Delivery.delivery_id)
+    ))
+
+
+def active_delivery_ids_for_driver(db: Session, driver_user_id: int) -> list[int]:
+    """A driver's currently active (not yet Delivered/Cancelled) delivery
+    IDs — what the driver app polls to notice its job list has changed,
+    without needing a manual refresh."""
+    return list(db.scalars(
+        select(models.Delivery.delivery_id).where(
+            models.Delivery.driver_user_id == driver_user_id,
+            models.Delivery.status.in_(("Scheduled", "En Route")),
+        )
+    ))
+
+
 def get_delivery_by_token(db: Session, token: str) -> models.Delivery | None:
     return db.scalar(select(models.Delivery).where(models.Delivery.access_token == token))
 
