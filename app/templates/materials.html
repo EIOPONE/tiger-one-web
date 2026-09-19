@@ -40,7 +40,13 @@
           <button class="btn btn-outline btn-small" type="submit">Receive</button>
         </form>
       </td>
-      <td><button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-material-{{ m.material_id }}')">Edit</button></td>
+      <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-material-{{ m.material_id }}')">Edit</button>
+        {% set impact = impacts.get(m.material_id, {'recipe_count': 0}) %}
+        <form method="post" action="/materials/{{ m.material_id }}/delete" onsubmit="return confirm('Remove {{ m.name }} from the active materials list?{{ ' It is used in ' ~ impact.recipe_count ~ ' product recipe(s) — those will keep the recipe line but the material will no longer show as in-stock.' if impact.recipe_count > 0 else '' }}');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
+        </form>
+      </td>
     </tr>
     <tr class="edit-row" id="edit-material-{{ m.material_id }}">
       <td colspan="7">

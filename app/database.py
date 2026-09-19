@@ -69,6 +69,7 @@ _LIGHT_MIGRATIONS = [
 # re-adds one they've deliberately deleted.
 _DEFAULT_PAYMENT_TERMS = ["Pro Forma", "End Of Month", "30 Days", "60 Days", "Cash"]
 _DEFAULT_CUSTOMER_GROUPS = ["Discounted Rate", "Late Payer", "Cash Payer"]
+_DEFAULT_SUPPLIER_GROUPS = ["Raw Materials", "Vehicle Parts & Servicing", "Other"]
 
 
 def _seed_option_lists() -> None:
@@ -80,6 +81,9 @@ def _seed_option_lists() -> None:
         if session.query(models.CustomerGroupOption).count() == 0:
             for i, name in enumerate(_DEFAULT_CUSTOMER_GROUPS):
                 session.add(models.CustomerGroupOption(name=name, sort_order=i))
+        if session.query(models.SupplierGroupOption).count() == 0:
+            for i, name in enumerate(_DEFAULT_SUPPLIER_GROUPS):
+                session.add(models.SupplierGroupOption(name=name, sort_order=i))
         session.commit()
 
 

@@ -214,6 +214,60 @@ def remove_customer_group_option(db: Session, option_id: int) -> None:
         db.flush()
 
 
+def supplier_group_options(db: Session, active_only: bool = True) -> list[models.SupplierGroupOption]:
+    q = select(models.SupplierGroupOption).order_by(models.SupplierGroupOption.sort_order, models.SupplierGroupOption.name)
+    if active_only:
+        q = q.where(models.SupplierGroupOption.active.is_(True))
+    return list(db.scalars(q))
+
+
+def add_supplier_group_option(db: Session, name: str) -> models.SupplierGroupOption:
+    name = name.strip()
+    existing = db.scalar(select(models.SupplierGroupOption).where(models.SupplierGroupOption.name == name))
+    if existing:
+        existing.active = True
+        db.flush()
+        return existing
+    max_order = db.scalar(select(func.max(models.SupplierGroupOption.sort_order))) or 0
+    option = models.SupplierGroupOption(name=name, sort_order=max_order + 1)
+    db.add(option)
+    db.flush()
+    return option
+
+
+def remove_supplier_group_option(db: Session, option_id: int) -> None:
+    option = db.get(models.SupplierGroupOption, option_id)
+    if option:
+        option.active = False
+        db.flush()
+
+
+def save_supplier(db: Session, values: dict, supplier_id: int | None = None) -> models.Supplier:
+    if supplier_id:
+        supplier = db.get(models.Supplier, supplier_id)
+        for key, value in values.items():
+            setattr(supplier, key, value)
+    else:
+        supplier = models.Supplier(**values)
+        db.add(supplier)
+    db.flush()
+    return supplier
+
+
+def list_suppliers(db: Session) -> list[models.Supplier]:
+    return list(db.scalars(
+        select(models.Supplier).where(models.Supplier.active.is_(True))
+        .order_by(models.Supplier.group, models.Supplier.name)
+    ))
+
+
+def deactivate_supplier(db: Session, supplier_id: int) -> None:
+    supplier = db.get(models.Supplier, supplier_id)
+    if supplier:
+        supplier.active = False
+        db.flush()
+
+
 def import_customers_csv(db: Session, csv_text: str) -> dict:
     """Bulk-loads customers from a CSV export (e.g. from the old system or
     Xero). Recognises common header spellings case-insensitively; any column
@@ -338,12 +392,43 @@ def save_material(db: Session, values: dict, material_id: int | None = None) -> 
     return material
 
 
+def deactivate_material(db: Session, material_id: int) -> None:
+    """Soft-delete — e.g. a supplier change makes an old material code
+    obsolete. Keeps past recipes/reservations referencing it intact rather
+    than a hard delete, which would be blocked by those references anyway."""
+    material = db.get(models.Material, material_id)
+    if material:
+        material.active = False
+        db.flush()
+
+
+def material_delete_impact(db: Session, material_id: int) -> dict:
+    """How many active products' recipes use this material — shown as a
+    heads-up before removing it, since their recipe would lose that line."""
+    recipe_count = db.scalar(
+        select(func.count()).select_from(models.Recipe)
+        .join(models.Product, models.Recipe.product_id == models.Product.product_id)
+        .where(models.Recipe.material_id == material_id, models.Product.active.is_(True))
+    ) or 0
+    return {"recipe_count": recipe_count}
+
+
 def receive_stock(db: Session, material_id: int, quantity: float, reference: str = "", notes: str = "") -> None:
     material = db.get(models.Material, material_id)
     if not material:
         raise ValueError("Material not found")
     material.on_hand = Decimal(str(material.on_hand)) + Decimal(str(quantity))
     db.flush()
+
+
+def deactivate_product(db: Session, product_id: int) -> None:
+    """Soft-delete — for a supplier/spec change where the product needs
+    retiring. Keeps past quotes/orders that reference it intact rather than
+    a hard delete, which would be blocked by those references anyway."""
+    product = db.get(models.Product, product_id)
+    if product:
+        product.active = False
+        db.flush()
 
 
 def save_product(db: Session, values: dict, recipe_lines: list[dict], product_id: int | None = None) -> models.Product:

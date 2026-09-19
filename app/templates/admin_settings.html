@@ -56,4 +56,30 @@
   </form>
 </div>
 
+<div class="card">
+  <h2>Supplier group options</h2>
+  <p class="muted" style="font-size:13px;">Shown on the Supplier form's Group dropdown — e.g. Raw Materials, Vehicle Parts &amp; Servicing.</p>
+  {% if supplier_group_options %}
+  <table>
+    <tr><th>Option</th><th></th></tr>
+    {% for opt in supplier_group_options %}
+    <tr>
+      <td>{{ opt.name }}</td>
+      <td>
+        <form method="post" action="/admin/settings/supplier-groups/{{ opt.option_id }}/remove" onsubmit="return confirm('Remove {{ opt.name }} from the Supplier Group dropdown? Existing suppliers already set to it keep the text.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No supplier group options yet.</div>
+  {% endif %}
+  <form method="post" action="/admin/settings/supplier-groups/new" style="display:flex;gap:8px;align-items:end;margin-top:14px;">
+    <div style="flex:1;"><label for="sg-name">Add an option</label><input type="text" id="sg-name" name="name" required placeholder="e.g. Fuel"></div>
+    <button class="btn btn-primary" type="submit">Add</button>
+  </form>
+</div>
+
 {% endblock %}

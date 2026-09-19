@@ -102,6 +102,51 @@ def test_update_office_user_keeps_password_when_blank(db):
     assert crud.authenticate(db, "sarah", "newpass") is not None
 
 
+def test_deactivate_material_removes_it_from_active_list_but_keeps_the_row(db):
+    material = crud.save_material(db, {
+        "code": "CEM", "name": "Cement", "unit": "kg", "on_hand": 100,
+        "reorder_level": 10, "reorder_quantity": 50, "unit_cost": 0.5, "supplier": "ABC",
+    })
+    db.commit()
+    assert any(m["material_id"] == material.material_id for m in crud.material_balances(db))
+
+    crud.deactivate_material(db, material.material_id)
+    db.commit()
+    assert not any(m["material_id"] == material.material_id for m in crud.material_balances(db))
+    assert db.get(crud.models.Material, material.material_id) is not None  # row kept, just inactive
+
+
+def test_material_delete_impact_counts_active_product_recipes(db):
+    material = crud.save_material(db, {
+        "code": "AGG", "name": "Aggregate", "unit": "kg", "on_hand": 1000,
+        "reorder_level": 100, "reorder_quantity": 200, "unit_cost": 0.1, "supplier": "ABC",
+    })
+    db.commit()
+    assert crud.material_delete_impact(db, material.material_id)["recipe_count"] == 0
+
+    product = crud.save_product(db, {
+        "code": "C30", "name": "C30", "description": "", "sell_unit": "m³", "default_unit_price": 90,
+    }, [{"material_id": material.material_id, "quantity_per_unit": 300, "waste_percent": 2}])
+    db.commit()
+    assert crud.material_delete_impact(db, material.material_id)["recipe_count"] == 1
+
+    crud.deactivate_product(db, product.product_id)
+    db.commit()
+    assert crud.material_delete_impact(db, material.material_id)["recipe_count"] == 0  # product no longer active
+
+
+def test_deactivate_product_removes_it_from_active_list_but_keeps_the_row(db):
+    product = crud.save_product(db, {
+        "code": "C30", "name": "C30", "description": "", "sell_unit": "m³", "default_unit_price": 90,
+    }, [])
+    db.commit()
+
+    crud.deactivate_product(db, product.product_id)
+    db.commit()
+    assert product.active is False
+    assert db.get(crud.models.Product, product.product_id) is not None
+
+
 def test_edit_vehicle_in_place(db):
     vehicle = crud.save_vehicle(db, "TC01", "Mixer")
     db.commit()

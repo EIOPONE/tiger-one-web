@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Suppliers — Tiger One{% endblock %}
+{% block page_title %}Suppliers{% endblock %}
+{% block page_subtitle %}Raw material suppliers, vehicle parts & servicing, and everyone else you buy from.{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Add a supplier</h2>
+  <form method="post" action="/suppliers/new">
+    <div class="grid-2">
+      <div><label for="name">Supplier name</label><input type="text" id="name" name="name" required></div>
+      <div>
+        <label for="group">Group</label>
+        <select id="group" name="group">
+          <option value="">— none set —</option>
+          {% for opt in supplier_group_options %}
+          <option value="{{ opt.name }}">{{ opt.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div><label for="contact_name">Contact name</label><input type="text" id="contact_name" name="contact_name"></div>
+      <div><label for="telephone">Telephone</label><input type="text" id="telephone" name="telephone"></div>
+    </div>
+    <div class="grid-2">
+      <div><label for="email">Email</label><input type="text" id="email" name="email"></div>
+      <div><label for="address">Address</label><input type="text" id="address" name="address"></div>
+    </div>
+    <label for="notes">Notes</label>
+    <input type="text" id="notes" name="notes" placeholder="account number, delivery lead time, etc.">
+    <button class="btn btn-primary" type="submit" style="margin-top:14px;">Add supplier</button>
+  </form>
+  <p class="muted" style="font-size:13px;margin-top:10px;">Supplier group options are managed by an Admin from <a href="/admin/settings">Settings</a>.</p>
+</div>
+
+<div class="card">
+  <h2>All suppliers</h2>
+  {% if suppliers %}
+  <table>
+    <tr><th>Name</th><th>Group</th><th>Contact</th><th>Telephone</th><th>Email</th><th></th></tr>
+    {% for s in suppliers %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td>{% if s.group %}<span class="pill pill-draft">{{ s.group }}</span>{% endif %}</td>
+      <td>{{ s.contact_name }}</td>
+      <td class="muted">{{ s.telephone }}</td>
+      <td class="muted">{{ s.email }}</td>
+      <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-supplier-{{ s.supplier_id }}')">Edit</button>
+        <form method="post" action="/suppliers/{{ s.supplier_id }}/delete" onsubmit="return confirm('Remove {{ s.name }} from the active suppliers list?');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
+        </form>
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-supplier-{{ s.supplier_id }}">
+      <td colspan="6">
+        <div class="card-inline">
+          <form method="post" action="/suppliers/{{ s.supplier_id }}/edit">
+            <div class="grid-2">
+              <div><label>Supplier name</label><input type="text" name="name" required value="{{ s.name }}"></div>
+              <div>
+                <label>Group</label>
+                <select name="group">
+                  <option value="">— none set —</option>
+                  {% for opt in supplier_group_options %}
+                  <option value="{{ opt.name }}" {% if s.group == opt.name %}selected{% endif %}>{{ opt.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div><label>Contact name</label><input type="text" name="contact_name" value="{{ s.contact_name }}"></div>
+              <div><label>Telephone</label><input type="text" name="telephone" value="{{ s.telephone }}"></div>
+            </div>
+            <div class="grid-2">
+              <div><label>Email</label><input type="text" name="email" value="{{ s.email }}"></div>
+              <div><label>Address</label><input type="text" name="address" value="{{ s.address }}"></div>
+            </div>
+            <label>Notes</label>
+            <input type="text" name="notes" value="{{ s.notes }}">
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-supplier-{{ s.supplier_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No suppliers yet — add the first one above.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

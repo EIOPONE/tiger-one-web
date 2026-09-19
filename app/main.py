@@ -413,9 +413,20 @@ def materials_page(request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
+    materials = crud.material_balances(db)
+    impacts = {m["material_id"]: crud.material_delete_impact(db, m["material_id"]) for m in materials}
     return templates.TemplateResponse(request, "materials.html", {
-        "user": user, "active": "materials", "materials": crud.material_balances(db),
+        "user": user, "active": "materials", "materials": materials, "impacts": impacts,
     })
+
+
+@app.post("/materials/{material_id}/delete")
+def materials_delete(request: Request, material_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_material(db, material_id)
+    return RedirectResponse("/materials", status_code=303)
 
 
 @app.post("/materials/new")
@@ -459,6 +470,58 @@ def materials_receive(request: Request, material_id: int, quantity: float = Form
     return RedirectResponse("/materials", status_code=303)
 
 
+@app.get("/suppliers", response_class=HTMLResponse)
+def suppliers_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "suppliers.html", {
+        "user": user, "active": "suppliers", "suppliers": crud.list_suppliers(db),
+        "supplier_group_options": crud.supplier_group_options(db),
+    })
+
+
+@app.post("/suppliers/new")
+def suppliers_new(
+    request: Request, name: str = Form(...), group: str = Form(""), contact_name: str = Form(""),
+    telephone: str = Form(""), email: str = Form(""), address: str = Form(""), notes: str = Form(""),
+    db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_supplier(db, {
+        "name": name, "group": group, "contact_name": contact_name, "telephone": telephone,
+        "email": email, "address": address, "notes": notes,
+    })
+    return RedirectResponse("/suppliers", status_code=303)
+
+
+@app.post("/suppliers/{supplier_id}/edit")
+def suppliers_edit(
+    request: Request, supplier_id: int, name: str = Form(...), group: str = Form(""),
+    contact_name: str = Form(""), telephone: str = Form(""), email: str = Form(""),
+    address: str = Form(""), notes: str = Form(""), db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_supplier(db, {
+        "name": name, "group": group, "contact_name": contact_name, "telephone": telephone,
+        "email": email, "address": address, "notes": notes,
+    }, supplier_id=supplier_id)
+    return RedirectResponse("/suppliers", status_code=303)
+
+
+@app.post("/suppliers/{supplier_id}/delete")
+def suppliers_delete(request: Request, supplier_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_supplier(db, supplier_id)
+    return RedirectResponse("/suppliers", status_code=303)
+
+
 @app.get("/products", response_class=HTMLResponse)
 def products_page(request: Request, db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
@@ -488,6 +551,15 @@ async def products_new(request: Request, db: Session = Depends(db_dependency)):
         "sell_unit": form.get("sell_unit") or "m³",
         "default_unit_price": float(form.get("default_unit_price") or 0),
     }, recipe_lines)
+    return RedirectResponse("/products", status_code=303)
+
+
+@app.post("/products/{product_id}/delete")
+def products_delete(request: Request, product_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.deactivate_product(db, product_id)
     return RedirectResponse("/products", status_code=303)
 
 
@@ -897,6 +969,7 @@ def admin_settings_page(request: Request, db: Session = Depends(db_dependency)):
         "user": user, "active": "admin-settings",
         "payment_terms_options": crud.payment_terms_options(db),
         "customer_group_options": crud.customer_group_options(db),
+        "supplier_group_options": crud.supplier_group_options(db),
     })
 
 
@@ -933,6 +1006,24 @@ def admin_remove_customer_group(request: Request, option_id: int, db: Session = 
     if isinstance(user, RedirectResponse):
         return user
     crud.remove_customer_group_option(db, option_id)
+    return RedirectResponse("/admin/settings", status_code=303)
+
+
+@app.post("/admin/settings/supplier-groups/new")
+def admin_add_supplier_group(request: Request, name: str = Form(...), db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.add_supplier_group_option(db, name)
+    return RedirectResponse("/admin/settings", status_code=303)
+
+
+@app.post("/admin/settings/supplier-groups/{option_id}/remove")
+def admin_remove_supplier_group(request: Request, option_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.remove_supplier_group_option(db, option_id)
     return RedirectResponse("/admin/settings", status_code=303)
 
 

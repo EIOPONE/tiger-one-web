@@ -57,6 +57,38 @@ class CustomerGroupOption(Base):
     sort_order = Column(Integer, nullable=False, default=0)
 
 
+class SupplierGroupOption(Base):
+    """Admin-managed list of choices for Supplier.group — e.g. Raw
+    Materials, Vehicle Parts & Servicing — so the supplier list can be
+    filtered/segmented by what a supplier is for."""
+    __tablename__ = "supplier_group_options"
+
+    option_id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+
+class Supplier(Base):
+    """A standalone supplier directory — separate from the free-text
+    Material.supplier field, so both raw-material suppliers and, say,
+    vehicle-parts/servicing suppliers can be tracked with contact details
+    and grouped for easy filtering."""
+    __tablename__ = "suppliers"
+
+    supplier_id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    group = Column(String, nullable=False, default="")  # picked from SupplierGroupOption
+    contact_name = Column(String, nullable=False, default="")
+    telephone = Column(String, nullable=False, default="")
+    email = Column(String, nullable=False, default="")
+    address = Column(String, nullable=False, default="")
+    notes = Column(String, nullable=False, default="")
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
