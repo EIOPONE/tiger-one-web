@@ -47,6 +47,10 @@
     .topbar .subtitle { color: var(--muted); font-size: 13px; margin: 3px 0 0; }
     .topbar .actions { display: flex; gap: 8px; }
     main { max-width: 1120px; padding: 24px 28px 60px; }
+    /* Pages that need the full window width (e.g. the job board, whose
+       columns should grow to fill the screen before scrolling) opt in
+       with body_class="wide-page" instead of being capped at 1120px. */
+    body.wide-page main { max-width: none; }
 
     .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
     .card h2 { margin: 0 0 14px; font-size: 16px; }
@@ -90,7 +94,7 @@
     .driver-chip.unassigned { background: #FBE8E5; color: var(--red); }
   </style>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <div class="shell">
   {% if user %}
   <aside class="sidebar">

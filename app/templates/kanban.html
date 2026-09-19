@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Job Board — Tiger One{% endblock %}
+{% block body_class %}wide-page{% endblock %}
 {% block page_title %}Job board{% endblock %}
 {% block page_subtitle %}Drag a job into a driver's column to assign it, between columns to reassign, or up/down within a column to set priority order.{% endblock %}
 {% block page_actions %}
@@ -10,8 +11,13 @@
 {% block content %}
 
 <style>
-  .board { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 12px; }
-  .col { flex: 0 0 260px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 200px; }
+  /* Columns grow evenly to fill the available width (up to a comfortable
+     max) so a handful of drivers use the whole screen instead of a strip
+     down the left with a scrollbar underneath. Once there are enough
+     columns that they'd get narrower than min-width, they stop growing
+     and .board's own horizontal scrollbar takes over instead. */
+  .board { display: flex; flex-wrap: nowrap; gap: 14px; overflow-x: auto; padding-bottom: 12px; }
+  .col { flex: 1 1 240px; min-width: 240px; max-width: 340px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 200px; }
   .col.drag-over { background: var(--soft-orange); border-color: var(--orange); }
   .col-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 10px; display: flex; justify-content: space-between; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: grab; font-size: 13px; }
