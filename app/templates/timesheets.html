@@ -127,8 +127,8 @@
       <td class="right">0.00</td>
       <td></td>
       {% elif day.worked %}
-      <td>{{ day.clock_in.strftime('%H:%M') if day.clock_in else '—' }}</td>
-      <td>{% if day.clock_out %}{{ day.clock_out.strftime('%H:%M') }}{% else %}<span class="muted">still clocked in</span>{% endif %}</td>
+      <td>{{ day.clock_in | uk_time if day.clock_in else '—' }}</td>
+      <td>{% if day.clock_out %}{{ day.clock_out | uk_time }}{% else %}<span class="muted">still clocked in</span>{% endif %}</td>
       <td class="right"><strong>{{ "%.2f"|format(day.hours_worked) }}</strong>{% if day.is_manual %} <span class="muted" style="font-size:11px;">(corrected)</span>{% endif %}</td>
       <td class="right">{{ "%.2f"|format(day.driving_hours) }}</td>
       <td>

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from . import crud, models
 from . import pod_pdf, xero_client, report_pdf, quote_pdf, timesheet_pdf
+from . import tz
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -36,6 +37,7 @@ TRACCAR_PASSWORD = os.environ.get("TRACCAR_PASSWORD", "")
 
 app = FastAPI(title="Tiger One")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.filters["uk_time"] = tz.uk_time_str
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -328,6 +330,8 @@ def customers_page(request: Request, db: Session = Depends(db_dependency)):
     impacts = {c.customer_id: crud.customer_delete_impact(db, c.customer_id) for c in customers}
     return templates.TemplateResponse(request, "customers.html", {
         "user": user, "active": "customers", "customers": customers, "impacts": impacts,
+        "payment_terms_options": crud.payment_terms_options(db),
+        "customer_group_options": crud.customer_group_options(db),
     })
 
 
@@ -344,16 +348,64 @@ def customers_delete(request: Request, customer_id: int, db: Session = Depends(d
 def customers_new(
     request: Request, customer_type: str = Form(...), display_name: str = Form(...),
     contact_name: str = Form(""), mobile: str = Form(""), email: str = Form(""),
-    payment_terms: str = Form(""), address_1: str = Form(""), db: Session = Depends(db_dependency),
+    payment_terms: str = Form(""), customer_group: str = Form(""), address_1: str = Form(""),
+    db: Session = Depends(db_dependency),
 ):
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
     crud.save_customer(db, {
         "customer_type": customer_type, "display_name": display_name, "contact_name": contact_name,
-        "mobile": mobile, "email": email, "payment_terms": payment_terms, "address_1": address_1,
+        "mobile": mobile, "email": email, "payment_terms": payment_terms,
+        "customer_group": customer_group, "address_1": address_1,
     })
     return RedirectResponse("/customers", status_code=303)
+
+
+@app.post("/customers/{customer_id}/edit")
+def customers_edit(
+    request: Request, customer_id: int, customer_type: str = Form(...), display_name: str = Form(...),
+    contact_name: str = Form(""), telephone: str = Form(""), mobile: str = Form(""), email: str = Form(""),
+    payment_terms: str = Form(""), customer_group: str = Form(""), address_1: str = Form(""),
+    address_2: str = Form(""), town: str = Form(""), postcode: str = Form(""), notes: str = Form(""),
+    db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_customer(db, {
+        "customer_type": customer_type, "display_name": display_name, "contact_name": contact_name,
+        "telephone": telephone, "mobile": mobile, "email": email, "payment_terms": payment_terms,
+        "customer_group": customer_group, "address_1": address_1, "address_2": address_2,
+        "town": town, "postcode": postcode, "notes": notes,
+    }, customer_id=customer_id)
+    return RedirectResponse("/customers", status_code=303)
+
+
+@app.get("/customers/import", response_class=HTMLResponse)
+def customers_import_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "customers_import.html", {
+        "user": user, "active": "customers",
+    })
+
+
+@app.post("/customers/import")
+async def customers_import_submit(request: Request, file: UploadFile = File(...), db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    raw = await file.read()
+    try:
+        csv_text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        csv_text = raw.decode("latin-1")
+    result = crud.import_customers_csv(db, csv_text)
+    return templates.TemplateResponse(request, "customers_import.html", {
+        "user": user, "active": "customers", "result": result,
+    })
 
 
 @app.get("/materials", response_class=HTMLResponse)
@@ -379,6 +431,22 @@ def materials_new(
         "code": code, "name": name, "unit": unit, "on_hand": 0, "reorder_level": reorder_level,
         "reorder_quantity": reorder_quantity, "unit_cost": unit_cost, "supplier": supplier,
     })
+    return RedirectResponse("/materials", status_code=303)
+
+
+@app.post("/materials/{material_id}/edit")
+def materials_edit(
+    request: Request, material_id: int, code: str = Form(...), name: str = Form(...), unit: str = Form(...),
+    reorder_level: float = Form(0), reorder_quantity: float = Form(0), unit_cost: float = Form(0),
+    supplier: str = Form(""), db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_material(db, {
+        "code": code, "name": name, "unit": unit, "reorder_level": reorder_level,
+        "reorder_quantity": reorder_quantity, "unit_cost": unit_cost, "supplier": supplier,
+    }, material_id=material_id)
     return RedirectResponse("/materials", status_code=303)
 
 
@@ -420,6 +488,27 @@ async def products_new(request: Request, db: Session = Depends(db_dependency)):
         "sell_unit": form.get("sell_unit") or "m³",
         "default_unit_price": float(form.get("default_unit_price") or 0),
     }, recipe_lines)
+    return RedirectResponse("/products", status_code=303)
+
+
+@app.post("/products/{product_id}/edit")
+async def products_edit(request: Request, product_id: int, db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    form = await request.form()
+    material_ids = form.getlist("material_id")
+    quantities = form.getlist("quantity_per_unit")
+    wastes = form.getlist("waste_percent")
+    recipe_lines = [
+        {"material_id": mid, "quantity_per_unit": qty, "waste_percent": waste or 0}
+        for mid, qty, waste in zip(material_ids, quantities, wastes) if mid and qty
+    ]
+    crud.save_product(db, {
+        "code": form["code"], "name": form["name"], "description": "",
+        "sell_unit": form.get("sell_unit") or "m³",
+        "default_unit_price": float(form.get("default_unit_price") or 0),
+    }, recipe_lines, product_id=product_id)
     return RedirectResponse("/products", status_code=303)
 
 
@@ -776,6 +865,18 @@ def staff_new(
     return RedirectResponse("/staff", status_code=303)
 
 
+@app.post("/staff/{staff_user_id}/edit")
+def staff_edit(
+    request: Request, staff_user_id: int, full_name: str = Form(...), username: str = Form(...),
+    role: str = Form(...), password: str = Form(""), db: Session = Depends(db_dependency),
+):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.update_office_user(db, staff_user_id, full_name, username, role, password)
+    return RedirectResponse("/staff", status_code=303)
+
+
 @app.post("/staff/{staff_user_id}/deactivate")
 def staff_deactivate(request: Request, staff_user_id: int, db: Session = Depends(db_dependency)):
     user = require_admin_user(request, db)
@@ -783,6 +884,56 @@ def staff_deactivate(request: Request, staff_user_id: int, db: Session = Depends
         return user
     crud.deactivate_office_user(db, staff_user_id)
     return RedirectResponse("/staff", status_code=303)
+
+
+# --- admin settings: dropdown option lists (Admin only) ------------------------------------
+
+@app.get("/admin/settings", response_class=HTMLResponse)
+def admin_settings_page(request: Request, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    return templates.TemplateResponse(request, "admin_settings.html", {
+        "user": user, "active": "admin-settings",
+        "payment_terms_options": crud.payment_terms_options(db),
+        "customer_group_options": crud.customer_group_options(db),
+    })
+
+
+@app.post("/admin/settings/payment-terms/new")
+def admin_add_payment_terms(request: Request, name: str = Form(...), db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.add_payment_terms_option(db, name)
+    return RedirectResponse("/admin/settings", status_code=303)
+
+
+@app.post("/admin/settings/payment-terms/{option_id}/remove")
+def admin_remove_payment_terms(request: Request, option_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.remove_payment_terms_option(db, option_id)
+    return RedirectResponse("/admin/settings", status_code=303)
+
+
+@app.post("/admin/settings/customer-groups/new")
+def admin_add_customer_group(request: Request, name: str = Form(...), db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.add_customer_group_option(db, name)
+    return RedirectResponse("/admin/settings", status_code=303)
+
+
+@app.post("/admin/settings/customer-groups/{option_id}/remove")
+def admin_remove_customer_group(request: Request, option_id: int, db: Session = Depends(db_dependency)):
+    user = require_admin_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.remove_customer_group_option(db, option_id)
+    return RedirectResponse("/admin/settings", status_code=303)
 
 
 # --- drivers (office admin) ---------------------------------------------------------------
@@ -807,6 +958,18 @@ def drivers_new(
     if isinstance(user, RedirectResponse):
         return user
     crud.create_driver(db, full_name, username, pin)
+    return RedirectResponse("/drivers", status_code=303)
+
+
+@app.post("/drivers/{driver_user_id}/edit")
+def drivers_edit(
+    request: Request, driver_user_id: int, full_name: str = Form(...), username: str = Form(...),
+    pin: str = Form(""), db: Session = Depends(db_dependency),
+):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.update_driver(db, driver_user_id, full_name, username, pin)
     return RedirectResponse("/drivers", status_code=303)
 
 
@@ -853,7 +1016,7 @@ def vehicles_positions(request: Request, db: Session = Depends(db_dependency)):
         "vehicle_id": v.vehicle_id, "registration": v.registration, "description": v.description,
         "latitude": float(v.last_latitude) if v.last_latitude is not None else None,
         "longitude": float(v.last_longitude) if v.last_longitude is not None else None,
-        "last_position_at": v.last_position_at.isoformat() if v.last_position_at else None,
+        "last_position_at": tz.utc_iso(v.last_position_at),
     } for v in vehicles if v.last_latitude is not None and v.last_longitude is not None]
 
 
@@ -864,6 +1027,16 @@ def vehicles_new(request: Request, registration: str = Form(...), description: s
     if isinstance(user, RedirectResponse):
         return user
     crud.save_vehicle(db, registration, description, traccar_device_id)
+    return RedirectResponse("/vehicles", status_code=303)
+
+
+@app.post("/vehicles/{vehicle_id}/edit")
+def vehicles_edit(request: Request, vehicle_id: int, registration: str = Form(...), description: str = Form(""),
+                   traccar_device_id: str = Form(""), db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.save_vehicle(db, registration, description, traccar_device_id, vehicle_id=vehicle_id)
     return RedirectResponse("/vehicles", status_code=303)
 
 
@@ -1073,7 +1246,7 @@ def notifications_deliveries_since(request: Request, since: str, db: Session = D
     return [{
         "delivery_id": d.delivery_id, "order_number": d.order.order_number,
         "customer_name": d.order.customer.display_name, "driver_name": d.driver_name,
-        "signed_at": d.pod_signed_at.isoformat(),
+        "signed_at": tz.utc_iso(d.pod_signed_at),
     } for d in deliveries]
 
 

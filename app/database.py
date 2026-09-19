@@ -61,7 +61,26 @@ _LIGHT_MIGRATIONS = [
     "ALTER TABLE time_entries DROP CONSTRAINT IF EXISTS ck_time_entry_activity_type",
     "ALTER TABLE time_entries ADD CONSTRAINT ck_time_entry_activity_type "
     "CHECK (activity_type IN ('On Shift','Driving','Yard Work','Break','Other'))",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_group VARCHAR NOT NULL DEFAULT ''",
 ]
+
+# Seeded once, only if the table is empty — an admin can freely rename or
+# remove these afterwards from the Admin settings screen, so this never
+# re-adds one they've deliberately deleted.
+_DEFAULT_PAYMENT_TERMS = ["Pro Forma", "End Of Month", "30 Days", "60 Days", "Cash"]
+_DEFAULT_CUSTOMER_GROUPS = ["Discounted Rate", "Late Payer", "Cash Payer"]
+
+
+def _seed_option_lists() -> None:
+    from . import models
+    with SessionLocal() as session:
+        if session.query(models.PaymentTermsOption).count() == 0:
+            for i, name in enumerate(_DEFAULT_PAYMENT_TERMS):
+                session.add(models.PaymentTermsOption(name=name, sort_order=i))
+        if session.query(models.CustomerGroupOption).count() == 0:
+            for i, name in enumerate(_DEFAULT_CUSTOMER_GROUPS):
+                session.add(models.CustomerGroupOption(name=name, sort_order=i))
+        session.commit()
 
 
 def _run_light_migrations() -> None:
@@ -78,6 +97,7 @@ def _run_light_migrations() -> None:
 def init_db() -> None:
     Base.metadata.create_all(engine)
     _run_light_migrations()
+    _seed_option_lists()
 
 
 @contextmanager

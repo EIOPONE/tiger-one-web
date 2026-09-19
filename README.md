@@ -52,6 +52,37 @@ removes the reservation.
   on startup — fine for the changes made so far (all nullable, additive),
   but worth replacing before schema changes get more involved.
 
+## Timezone display fix (September 2026)
+
+Found and fixed a systemic bug: every stored timestamp is UTC, but
+seven different places across the app (Vehicles, clock points,
+timesheets, the driver dashboard, the printable timesheet PDF) were
+displaying it as-is with `.strftime()`, with no conversion to UK local
+time. During British Summer Time (UTC+1, in effect right now), that
+showed everything exactly an hour behind reality — this is what caused
+"Last seen" on the fleet map to look stale.
+
+Fixed with one shared module, `app/tz.py`, rather than patching each
+spot differently:
+
+- **`uk_time_str(dt)`** — for anywhere a time gets displayed to a
+  person (Jinja filter `| uk_time`, or called directly in the PDF
+  generator). Uses `zoneinfo` to handle the GMT/BST transition
+  automatically — correct in both summer and winter, not a hardcoded
+  +1 hour that would then be wrong for half the year.
+- **`utc_iso(dt)`** — for anywhere a timestamp gets sent to the browser
+  as JSON (the fleet map's position feed, the office notification
+  toast). A naive stored datetime now always carries an explicit UTC
+  marker when serialized, so JavaScript's own `Date` parsing can't
+  silently misinterpret it as already being local time — the fleet
+  map's "time ago" calculation had the same underlying bug for the
+  same reason.
+
+Tested directly against the actual bug: a vehicle position stored as
+13:00 UTC now correctly shows as 14:00 on `/vehicles` — confirmed live,
+not just via the unit tests (which also check the opposite case, GMT in
+winter, matches UTC exactly — proving this isn't a hardcoded offset).
+
 ## Quote and order PDFs now work on Render
 
 They didn't used to — `pdf_engine.py` (still in the repo, now unused)

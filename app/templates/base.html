@@ -80,6 +80,9 @@
     .item-row { display: grid; grid-template-columns: 2fr 1.4fr 0.8fr 0.8fr 1fr; gap: 8px; align-items: end; margin-bottom: 8px; }
     .empty { color: var(--muted); padding: 24px 0; text-align: center; font-size: 14px; }
     .toggle-form { display: inline; }
+    .edit-row { display: none; background: var(--surface); }
+    .edit-row td { padding: 16px; }
+    .edit-row .card-inline { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
     .job-row { display: grid; grid-template-columns: 90px 1.4fr 1fr 1fr 100px; gap: 12px; align-items: center; padding: 12px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
     .job-row:last-child { border-bottom: none; }
     .job-row .time { font-weight: 700; color: var(--orange-dark); }
@@ -106,10 +109,11 @@
       <a href="/kanban" class="{{ 'active' if active=='kanban' }}"><span class="dot"></span>Job Board</a>
       <a href="/customers" class="{{ 'active' if active=='customers' }}"><span class="dot"></span>Customers</a>
       <a href="/materials" class="{{ 'active' if active=='materials' }}"><span class="dot"></span>Materials</a>
-      <a href="/products" class="{{ 'active' if active=='products' }}"><span class="dot"></span>Products &amp; Mixes</a>
+      <a href="/products" class="{{ 'active' if active=='products' }}"><span class="dot"></span>Products &amp; Services</a>
       <a href="/drivers" class="{{ 'active' if active=='drivers' }}"><span class="dot"></span>Drivers</a>
       <a href="/vehicles" class="{{ 'active' if active=='vehicles' }}"><span class="dot"></span>Vehicles</a>
       {% if user.role == 'Admin' %}<a href="/staff" class="{{ 'active' if active=='staff' }}"><span class="dot"></span>Staff</a>{% endif %}
+      {% if user.role == 'Admin' %}<a href="/admin/settings" class="{{ 'active' if active=='admin-settings' }}"><span class="dot"></span>Settings</a>{% endif %}
       <a href="/vehicle-checks" class="{{ 'active' if active=='vehicle-checks' }}"><span class="dot"></span>Vehicle Checks</a>
       <a href="/clock-points" class="{{ 'active' if active=='clock-points' }}"><span class="dot"></span>Clock Points</a>
       <a href="/timesheets" class="{{ 'active' if active=='timesheets' }}"><span class="dot"></span>Timesheets</a>
@@ -138,6 +142,16 @@
     <main>
       {% block content %}{% endblock %}
     </main>
+    <script>
+      // Shared by every "input" screen (Materials, Products, Drivers, Staff,
+      // Customers, Vehicles) — each row's Edit button reveals a hidden row
+      // underneath holding a pre-filled edit form, instead of a popup.
+      function toggleEditRow(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = (el.style.display === 'table-row') ? 'none' : 'table-row';
+      }
+    </script>
   </div>
   </div>
 

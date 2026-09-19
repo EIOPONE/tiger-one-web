@@ -33,6 +33,30 @@ class AppUser(Base):
     active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
+class PaymentTermsOption(Base):
+    """Admin-managed list of choices for Customer.payment_terms — starts
+    seeded with Pro Forma / End Of Month / 30 Days / 60 Days / Cash but can
+    be added to or retired from the Admin settings screen."""
+    __tablename__ = "payment_terms_options"
+
+    option_id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+
+class CustomerGroupOption(Base):
+    """Admin-managed list of choices for Customer.customer_group — e.g.
+    discounted rate, late payers, cash payers — so reports can segment the
+    customer base. Managed from the Admin settings screen."""
+    __tablename__ = "customer_group_options"
+
+    option_id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
@@ -48,6 +72,11 @@ class Customer(Base):
     town = Column(String, nullable=False, default="")
     postcode = Column(String, nullable=False, default="")
     payment_terms = Column(String, nullable=False, default="")
+    # Free-text label picked from an admin-managed list (see CustomerGroupOption)
+    # so reports can segment the customer base — e.g. discounted-rate, late
+    # payers, cash-payers. Kept as plain text (not a foreign key) so removing
+    # an option later never breaks an existing customer's record.
+    customer_group = Column(String, nullable=False, default="")
     notes = Column(String, nullable=False, default="")
     active = Column(Boolean, nullable=False, default=True)
     xero_contact_id = Column(String, nullable=True)  # set once pushed to / matched in Xero

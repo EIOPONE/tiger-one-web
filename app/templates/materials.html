@@ -26,7 +26,7 @@
   <h2>Stock levels</h2>
   {% if materials %}
   <table>
-    <tr><th>Material</th><th class="right">On hand</th><th class="right">Reserved</th><th class="right">Available</th><th class="right">Reorder level</th><th>Receive stock</th></tr>
+    <tr><th>Material</th><th class="right">On hand</th><th class="right">Reserved</th><th class="right">Available</th><th class="right">Reorder level</th><th>Receive stock</th><th></th></tr>
     {% for m in materials %}
     <tr {% if m.available <= m.reorder_level %}style="background:#FBE8E5;"{% endif %}>
       <td>{{ m.name }} <span class="muted">({{ m.code }})</span></td>
@@ -39,6 +39,31 @@
           <input type="number" step="0.01" name="quantity" placeholder="qty" style="width:90px;" required>
           <button class="btn btn-outline btn-small" type="submit">Receive</button>
         </form>
+      </td>
+      <td><button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-material-{{ m.material_id }}')">Edit</button></td>
+    </tr>
+    <tr class="edit-row" id="edit-material-{{ m.material_id }}">
+      <td colspan="7">
+        <div class="card-inline">
+          <form method="post" action="/materials/{{ m.material_id }}/edit">
+            <div class="grid-3">
+              <div><label>Code</label><input type="text" name="code" required value="{{ m.code }}"></div>
+              <div><label>Name</label><input type="text" name="name" required value="{{ m.name }}"></div>
+              <div><label>Unit</label><input type="text" name="unit" required value="{{ m.unit }}"></div>
+            </div>
+            <div class="grid-3">
+              <div><label>Reorder level</label><input type="number" step="0.01" name="reorder_level" value="{{ m.reorder_level }}"></div>
+              <div><label>Reorder quantity</label><input type="number" step="0.01" name="reorder_quantity" value="{{ m.reorder_quantity }}"></div>
+              <div><label>Unit cost (£)</label><input type="number" step="0.0001" name="unit_cost" value="{{ m.unit_cost }}"></div>
+            </div>
+            <label>Supplier</label>
+            <input type="text" name="supplier" value="{{ m.supplier }}">
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-material-{{ m.material_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
       </td>
     </tr>
     {% endfor %}

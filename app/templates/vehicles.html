@@ -31,15 +31,34 @@
         {% if not v.traccar_device_id %}
           <span class="muted">Not linked to Traccar</span>
         {% elif v.last_position_at %}
-          <span class="pill pill-completed">● Last seen {{ v.last_position_at.strftime('%H:%M') }}</span>
+          <span class="pill pill-completed">● Last seen {{ v.last_position_at | uk_time }}</span>
         {% else %}
           <span class="muted">Linked ({{ v.traccar_device_id }}) — no position yet</span>
         {% endif %}
       </td>
-      <td>
+      <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-vehicle-{{ v.vehicle_id }}')">Edit</button>
         <form method="post" action="/vehicles/{{ v.vehicle_id }}/deactivate" onsubmit="return confirm('Remove {{ v.registration }} from the active fleet list?');">
           <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
         </form>
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-vehicle-{{ v.vehicle_id }}">
+      <td colspan="4">
+        <div class="card-inline">
+          <form method="post" action="/vehicles/{{ v.vehicle_id }}/edit">
+            <div class="grid-2">
+              <div><label>Registration</label><input type="text" name="registration" required value="{{ v.registration }}"></div>
+              <div><label>Description</label><input type="text" name="description" value="{{ v.description }}"></div>
+            </div>
+            <label>Traccar device ID (optional)</label>
+            <input type="text" name="traccar_device_id" value="{{ v.traccar_device_id or '' }}">
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-vehicle-{{ v.vehicle_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
       </td>
     </tr>
     {% endfor %}

@@ -12,6 +12,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from . import tz
+
 INK = colors.HexColor("#17191C")
 MUTED = colors.HexColor("#70757C")
 ORANGE = colors.HexColor("#E3783E")
@@ -65,8 +67,8 @@ def generate_timesheet_pdf(driver_name: str, date_from: str, date_to: str, days:
         elif day["worked"]:
             rows.append([
                 Paragraph(day_label, cell_style),
-                Paragraph(day["clock_in"].strftime("%H:%M") if day["clock_in"] else "—", cell_style),
-                Paragraph(day["clock_out"].strftime("%H:%M") if day["clock_out"] else "still clocked in", cell_style),
+                Paragraph(tz.uk_time_str(day["clock_in"]) if day["clock_in"] else "—", cell_style),
+                Paragraph(tz.uk_time_str(day["clock_out"]) if day["clock_out"] else "still clocked in", cell_style),
                 Paragraph(f"{day['hours_worked']:.2f}", right_style),
                 Paragraph(f"{day['driving_hours']:.2f}", right_style),
             ])

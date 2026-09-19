@@ -66,6 +66,22 @@ def list_office_users(db: Session) -> list[models.AppUser]:
     ))
 
 
+def update_office_user(db: Session, user_id: int, full_name: str, username: str, role: str,
+                        password: str = "") -> models.AppUser:
+    """Edits an office login in place. Password is only changed if a new
+    one is actually typed — leaving it blank keeps the existing one."""
+    user = db.get(models.AppUser, user_id)
+    if not user:
+        raise ValueError("Staff account not found")
+    user.full_name = full_name.strip()
+    user.username = username.strip().lower()
+    user.role = role.strip() or user.role
+    if password:
+        user.password_hash = hash_password(password)
+    db.flush()
+    return user
+
+
 def deactivate_office_user(db: Session, user_id: int) -> None:
     user = db.get(models.AppUser, user_id)
     if user:
@@ -81,6 +97,20 @@ def create_driver(db: Session, full_name: str, username: str, pin: str) -> model
         full_name=full_name.strip(), role="Driver",
     )
     db.add(driver)
+    db.flush()
+    return driver
+
+
+def update_driver(db: Session, driver_user_id: int, full_name: str, username: str, pin: str = "") -> models.AppUser:
+    """Edits a driver account in place. PIN is only changed if a new one is
+    actually typed — leaving it blank keeps the existing PIN."""
+    driver = db.get(models.AppUser, driver_user_id)
+    if not driver:
+        raise ValueError("Driver not found")
+    driver.full_name = full_name.strip()
+    driver.username = username.strip().lower()
+    if pin:
+        driver.password_hash = hash_password(pin)
     db.flush()
     return driver
 
@@ -127,6 +157,134 @@ def next_order_number(db: Session) -> str:
 
 
 # --- customers / materials / products -------------------------------------------
+
+def payment_terms_options(db: Session, active_only: bool = True) -> list[models.PaymentTermsOption]:
+    q = select(models.PaymentTermsOption).order_by(models.PaymentTermsOption.sort_order, models.PaymentTermsOption.name)
+    if active_only:
+        q = q.where(models.PaymentTermsOption.active.is_(True))
+    return list(db.scalars(q))
+
+
+def customer_group_options(db: Session, active_only: bool = True) -> list[models.CustomerGroupOption]:
+    q = select(models.CustomerGroupOption).order_by(models.CustomerGroupOption.sort_order, models.CustomerGroupOption.name)
+    if active_only:
+        q = q.where(models.CustomerGroupOption.active.is_(True))
+    return list(db.scalars(q))
+
+
+def add_payment_terms_option(db: Session, name: str) -> models.PaymentTermsOption:
+    name = name.strip()
+    existing = db.scalar(select(models.PaymentTermsOption).where(models.PaymentTermsOption.name == name))
+    if existing:
+        existing.active = True
+        db.flush()
+        return existing
+    max_order = db.scalar(select(func.max(models.PaymentTermsOption.sort_order))) or 0
+    option = models.PaymentTermsOption(name=name, sort_order=max_order + 1)
+    db.add(option)
+    db.flush()
+    return option
+
+
+def remove_payment_terms_option(db: Session, option_id: int) -> None:
+    option = db.get(models.PaymentTermsOption, option_id)
+    if option:
+        option.active = False
+        db.flush()
+
+
+def add_customer_group_option(db: Session, name: str) -> models.CustomerGroupOption:
+    name = name.strip()
+    existing = db.scalar(select(models.CustomerGroupOption).where(models.CustomerGroupOption.name == name))
+    if existing:
+        existing.active = True
+        db.flush()
+        return existing
+    max_order = db.scalar(select(func.max(models.CustomerGroupOption.sort_order))) or 0
+    option = models.CustomerGroupOption(name=name, sort_order=max_order + 1)
+    db.add(option)
+    db.flush()
+    return option
+
+
+def remove_customer_group_option(db: Session, option_id: int) -> None:
+    option = db.get(models.CustomerGroupOption, option_id)
+    if option:
+        option.active = False
+        db.flush()
+
+
+def import_customers_csv(db: Session, csv_text: str) -> dict:
+    """Bulk-loads customers from a CSV export (e.g. from the old system or
+    Xero). Recognises common header spellings case-insensitively; any column
+    it doesn't recognise is ignored, and a row missing a name is skipped
+    rather than failing the whole import. Best-effort by design — a big,
+    messy real-world customer list is exactly what this needs to survive."""
+    import csv
+    import io as _io
+
+    _COLUMN_ALIASES = {
+        "display_name": {"display_name", "name", "customer", "customer name", "company", "company name"},
+        "customer_type": {"customer_type", "type"},
+        "contact_name": {"contact_name", "contact", "contact person", "contact name"},
+        "telephone": {"telephone", "phone", "tel", "landline"},
+        "mobile": {"mobile", "cell", "mobile number"},
+        "email": {"email", "email address"},
+        "address_1": {"address_1", "address1", "address", "address line 1"},
+        "address_2": {"address_2", "address2", "address line 2"},
+        "town": {"town", "city"},
+        "postcode": {"postcode", "post code", "zip"},
+        "payment_terms": {"payment_terms", "payment terms", "terms"},
+        "customer_group": {"customer_group", "customer group", "group"},
+        "notes": {"notes", "note", "comments"},
+    }
+
+    reader = csv.DictReader(_io.StringIO(csv_text))
+    field_map: dict[str, str] = {}
+    for header in reader.fieldnames or []:
+        key = (header or "").strip().lower()
+        for target, aliases in _COLUMN_ALIASES.items():
+            if key in aliases:
+                field_map[header] = target
+                break
+
+    created, skipped, errors = 0, 0, []
+    for i, row in enumerate(reader, start=2):  # row 1 is the header
+        values = {}
+        for header, raw in row.items():
+            target = field_map.get(header)
+            if target:
+                values[target] = (raw or "").strip()
+        display_name = values.get("display_name", "")
+        if not display_name:
+            skipped += 1
+            errors.append(f"Row {i}: no name/display name column value — skipped")
+            continue
+        customer_type = values.get("customer_type") or "Commercial"
+        if customer_type not in ("Commercial", "Private"):
+            customer_type = "Commercial"
+        try:
+            save_customer(db, {
+                "customer_type": customer_type,
+                "display_name": display_name,
+                "contact_name": values.get("contact_name", ""),
+                "telephone": values.get("telephone", ""),
+                "mobile": values.get("mobile", ""),
+                "email": values.get("email", ""),
+                "address_1": values.get("address_1", ""),
+                "address_2": values.get("address_2", ""),
+                "town": values.get("town", ""),
+                "postcode": values.get("postcode", ""),
+                "payment_terms": values.get("payment_terms", ""),
+                "customer_group": values.get("customer_group", ""),
+                "notes": values.get("notes", ""),
+            })
+            created += 1
+        except Exception as exc:  # keep going — one bad row shouldn't kill the whole import
+            skipped += 1
+            errors.append(f"Row {i} ({display_name}): {exc}")
+    return {"created": created, "skipped": skipped, "errors": errors}
+
 
 def save_customer(db: Session, values: dict, customer_id: int | None = None) -> models.Customer:
     is_new = customer_id is None
@@ -521,6 +679,8 @@ def material_balances(db: Session) -> list[dict]:
         rows.append({
             "material_id": material.material_id, "code": material.code, "name": material.name,
             "unit": material.unit, "on_hand": on_hand, "reorder_level": material.reorder_level,
+            "reorder_quantity": material.reorder_quantity, "unit_cost": material.unit_cost,
+            "supplier": material.supplier,
             "quote_reserved": q_reserved, "order_reserved": o_reserved,
             "reserved": q_reserved + o_reserved, "available": on_hand - q_reserved - o_reserved,
         })

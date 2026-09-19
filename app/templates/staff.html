@@ -38,7 +38,8 @@
       <td>{{ s.full_name }}</td>
       <td class="muted">{{ s.username }}</td>
       <td>{% if s.role == 'Admin' %}<span class="pill pill-completed">Admin</span>{% else %}{{ s.role }}{% endif %}</td>
-      <td>
+      <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-staff-{{ s.user_id }}')">Edit</button>
         {% if s.user_id != user.user_id %}
         <form method="post" action="/staff/{{ s.user_id }}/deactivate" onsubmit="return confirm('Remove {{ s.full_name }}\'s login? Their name stays on past quotes/orders they created.');">
           <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
@@ -46,6 +47,34 @@
         {% else %}
         <span class="muted" style="font-size:12px;">(you)</span>
         {% endif %}
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-staff-{{ s.user_id }}">
+      <td colspan="4">
+        <div class="card-inline">
+          <form method="post" action="/staff/{{ s.user_id }}/edit">
+            <div class="grid-2">
+              <div><label>Full name</label><input type="text" name="full_name" required value="{{ s.full_name }}"></div>
+              <div><label>Username</label><input type="text" name="username" required value="{{ s.username }}"></div>
+            </div>
+            <div class="grid-2">
+              <div><label>New password (leave blank to keep current)</label><input type="text" name="password" placeholder="they can change this later"></div>
+              <div>
+                <label>Role</label>
+                <select name="role">
+                  <option value="Sales" {% if s.role == 'Sales' %}selected{% endif %}>Sales</option>
+                  <option value="Commercial Manager" {% if s.role == 'Commercial Manager' %}selected{% endif %}>Commercial Manager</option>
+                  <option value="Office" {% if s.role == 'Office' %}selected{% endif %}>Office</option>
+                  <option value="Admin" {% if s.role == 'Admin' %}selected{% endif %}>Admin</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-staff-{{ s.user_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
       </td>
     </tr>
     {% endfor %}

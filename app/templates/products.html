@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Products — Tiger One{% endblock %}
-{% block page_title %}Products &amp; Mixes{% endblock %}
+{% block page_title %}Products &amp; Services{% endblock %}
 {% block page_subtitle %}Concrete products and their material recipes.{% endblock %}
 {% block content %}
 <div class="card">
@@ -26,7 +26,7 @@
   <h2>All products</h2>
   {% if products %}
   <table>
-    <tr><th>Code</th><th>Name</th><th class="right">Price</th><th>Recipe</th></tr>
+    <tr><th>Code</th><th>Name</th><th class="right">Price</th><th>Recipe</th><th></th></tr>
     {% for p in products %}
     <tr>
       <td>{{ p.code }}</td>
@@ -34,6 +34,30 @@
       <td class="right">£{{ "%.2f"|format(p.default_unit_price) }} / {{ p.sell_unit }}</td>
       <td class="muted">
         {% for r in p.recipes %}{{ r.material.code }}: {{ r.quantity_per_unit }} {{ r.material.unit }} (+{{ r.waste_percent }}% waste){% if not loop.last %}, {% endif %}{% endfor %}
+      </td>
+      <td><button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-product-{{ p.product_id }}')">Edit</button></td>
+    </tr>
+    <tr class="edit-row" id="edit-product-{{ p.product_id }}">
+      <td colspan="5">
+        <div class="card-inline">
+          <form method="post" action="/products/{{ p.product_id }}/edit" class="product-edit-form">
+            <div class="grid-3">
+              <div><label>Code</label><input type="text" name="code" required value="{{ p.code }}"></div>
+              <div><label>Name</label><input type="text" name="name" required value="{{ p.name }}"></div>
+              <div><label>Sell unit</label><input type="text" name="sell_unit" value="{{ p.sell_unit }}"></div>
+            </div>
+            <label>Default unit price (£)</label>
+            <input type="number" step="0.0001" name="default_unit_price" value="{{ p.default_unit_price }}" style="max-width:200px;">
+            <label style="margin-top:14px;">Recipe (materials consumed per unit)</label>
+            <div id="recipe-rows-{{ p.product_id }}"
+                 data-recipe='[{% for r in p.recipes %}{"material_id":{{ r.material_id }},"quantity_per_unit":{{ r.quantity_per_unit }},"waste_percent":{{ r.waste_percent }}}{% if not loop.last %},{% endif %}{% endfor %}]'></div>
+            <button type="button" class="btn btn-outline btn-small add-row-btn" data-product="{{ p.product_id }}">+ Add material</button>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-product-{{ p.product_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
       </td>
     </tr>
     {% endfor %}
@@ -45,23 +69,36 @@
 
 <script>
   const materials = {{ materials_json|safe }};
-  const rowsEl = document.getElementById('recipe-rows');
 
-  function addRow() {
+  function addRow(container, prefill) {
+    prefill = prefill || {};
     const row = document.createElement('div');
     row.className = 'item-row';
     row.style.gridTemplateColumns = '2fr 1fr 1fr auto';
-    const options = materials.map(m => `<option value="${m.material_id}">${m.name} (${m.unit})</option>`).join('');
+    const options = materials.map(m => `<option value="${m.material_id}" ${String(m.material_id) === String(prefill.material_id) ? 'selected' : ''}>${m.name} (${m.unit})</option>`).join('');
     row.innerHTML = `
       <div><select name="material_id">${options}</select></div>
-      <div><input type="number" step="0.0001" name="quantity_per_unit" placeholder="qty per unit" required></div>
-      <div><input type="number" step="0.01" name="waste_percent" placeholder="waste %" value="0"></div>
+      <div><input type="number" step="0.0001" name="quantity_per_unit" placeholder="qty per unit" value="${prefill.quantity_per_unit != null ? prefill.quantity_per_unit : ''}" required></div>
+      <div><input type="number" step="0.01" name="waste_percent" placeholder="waste %" value="${prefill.waste_percent != null ? prefill.waste_percent : 0}"></div>
       <div><button type="button" class="btn btn-outline btn-small remove-row">Remove</button></div>
     `;
     row.querySelector('.remove-row').onclick = () => row.remove();
-    rowsEl.appendChild(row);
+    container.appendChild(row);
   }
-  document.getElementById('add-row').onclick = addRow;
-  if (materials.length) addRow();
+
+  // "Add a product" form
+  const rowsEl = document.getElementById('recipe-rows');
+  document.getElementById('add-row').onclick = () => addRow(rowsEl);
+  if (materials.length) addRow(rowsEl);
+
+  // Each product's "Edit" form — pre-fill its recipe rows from data-recipe,
+  // and wire up its own "+ Add material" button.
+  document.querySelectorAll('[id^="recipe-rows-"]').forEach(container => {
+    const recipe = JSON.parse(container.dataset.recipe || '[]');
+    recipe.forEach(line => addRow(container, line));
+  });
+  document.querySelectorAll('.add-row-btn').forEach(btn => {
+    btn.onclick = () => addRow(document.getElementById('recipe-rows-' + btn.dataset.product));
+  });
 </script>
 {% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Import Customers — Tiger One{% endblock %}
+{% block page_title %}Import Customers{% endblock %}
+{% block page_subtitle %}Bulk-load your customer list from a CSV file instead of typing each one in.{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Upload a CSV file</h2>
+  <p class="muted" style="font-size:13px;">
+    The first row must be a header row. Tiger One recognises these column names (case-insensitive) —
+    any others are ignored, and any recognised column can be left out:
+  </p>
+  <p class="muted" style="font-size:13px;">
+    <strong>Name</strong> (required — also accepts "Display Name", "Customer", "Company"), Type
+    (Commercial/Private), Contact Name, Telephone, Mobile, Email, Address 1, Address 2, Town,
+    Postcode, Payment Terms, Customer Group, Notes.
+  </p>
+  <form method="post" action="/customers/import" enctype="multipart/form-data" style="margin-top:14px;">
+    <label for="file">CSV file</label>
+    <input type="file" id="file" name="file" accept=".csv,text/csv" required>
+    <button class="btn btn-primary" type="submit" style="margin-top:14px;">Import customers</button>
+  </form>
+</div>
+
+{% if result %}
+<div class="card">
+  <h2>Import result</h2>
+  <p><strong>{{ result.created }}</strong> customer(s) created.
+     {% if result.skipped %}<strong>{{ result.skipped }}</strong> row(s) skipped.{% endif %}</p>
+  {% if result.errors %}
+  <p class="muted" style="font-size:13px;">Details:</p>
+  <ul style="font-size:13px;color:var(--muted);">
+    {% for err in result.errors %}<li>{{ err }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <a class="btn btn-outline" href="/customers">Back to customers</a>
+</div>
+{% endif %}
+
+{% endblock %}

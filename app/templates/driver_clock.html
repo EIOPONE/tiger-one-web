@@ -59,7 +59,7 @@
       <div class="name-btn {{ 'on-shift' if statuses.get(d.user_id) }}"
            data-id="{{ d.user_id }}" data-name="{{ d.full_name }}"
            data-active="{{ 'true' if statuses.get(d.user_id) else 'false' }}"
-           data-since="{{ statuses.get(d.user_id).started_at.strftime('%H:%M') if statuses.get(d.user_id) else '' }}">
+           data-since="{{ statuses.get(d.user_id).started_at | uk_time if statuses.get(d.user_id) else '' }}">
         {{ d.full_name }}{% if statuses.get(d.user_id) %}<span class="dot"></span>{% endif %}
       </div>
       {% endfor %}

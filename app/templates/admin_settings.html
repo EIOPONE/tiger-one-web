@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Settings — Tiger One{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_subtitle %}Admin-only — manage the dropdown option lists used elsewhere in Tiger One.{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Payment terms options</h2>
+  <p class="muted" style="font-size:13px;">Shown on the Customer form's Payment Terms dropdown.</p>
+  {% if payment_terms_options %}
+  <table>
+    <tr><th>Option</th><th></th></tr>
+    {% for opt in payment_terms_options %}
+    <tr>
+      <td>{{ opt.name }}</td>
+      <td>
+        <form method="post" action="/admin/settings/payment-terms/{{ opt.option_id }}/remove" onsubmit="return confirm('Remove {{ opt.name }} from the Payment Terms dropdown? Existing customers already set to it keep the text.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No payment terms options yet.</div>
+  {% endif %}
+  <form method="post" action="/admin/settings/payment-terms/new" style="display:flex;gap:8px;align-items:end;margin-top:14px;">
+    <div style="flex:1;"><label for="pt-name">Add an option</label><input type="text" id="pt-name" name="name" required placeholder="e.g. 90 Days"></div>
+    <button class="btn btn-primary" type="submit">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Customer group options</h2>
+  <p class="muted" style="font-size:13px;">Shown on the Customer form's Customer Group dropdown — use this to segment the customer base for reporting (e.g. discounted rate, late payers, cash payers).</p>
+  {% if customer_group_options %}
+  <table>
+    <tr><th>Option</th><th></th></tr>
+    {% for opt in customer_group_options %}
+    <tr>
+      <td>{{ opt.name }}</td>
+      <td>
+        <form method="post" action="/admin/settings/customer-groups/{{ opt.option_id }}/remove" onsubmit="return confirm('Remove {{ opt.name }} from the Customer Group dropdown? Existing customers already set to it keep the text.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No customer group options yet.</div>
+  {% endif %}
+  <form method="post" action="/admin/settings/customer-groups/new" style="display:flex;gap:8px;align-items:end;margin-top:14px;">
+    <div style="flex:1;"><label for="cg-name">Add an option</label><input type="text" id="cg-name" name="name" required placeholder="e.g. Trade Account"></div>
+    <button class="btn btn-primary" type="submit">Add</button>
+  </form>
+</div>
+
+{% endblock %}
