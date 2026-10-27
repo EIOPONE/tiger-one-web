@@ -51,7 +51,17 @@ def generate_pod_pdf(delivery: models.Delivery, upload_dir: Path, logo_path: Pat
 
     if logo_path and logo_path.exists():
         try:
-            c.drawImage(ImageReader(str(logo_path)), margin, y - 16 * mm, height=16 * mm,
+            # The Tiger Concrete logo is a wide horizontal lockup (roughly
+            # 6.6:1) — scaling it to a fixed height alone stretches it well
+            # past 100mm wide and crashes into the right-aligned title next
+            # to it. Fit it inside a box instead, capped on both axes, so
+            # whichever dimension is tighter wins and the two never collide.
+            logo_reader = ImageReader(str(logo_path))
+            logo_w, logo_h = logo_reader.getSize()
+            max_logo_w, max_logo_h = 50 * mm, 16 * mm
+            scale = min(max_logo_w / logo_w, max_logo_h / logo_h)
+            draw_w, draw_h = logo_w * scale, logo_h * scale
+            c.drawImage(logo_reader, margin, y - draw_h, width=draw_w, height=draw_h,
                         preserveAspectRatio=True, mask="auto")
         except Exception:
             pass
