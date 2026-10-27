@@ -18,6 +18,7 @@ from . import models
 from . import xero_client
 from . import traccar_client
 from . import routing_client
+from . import push_client
 from .security import hash_password, verify_password, new_access_token
 
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID", "")
@@ -887,6 +888,56 @@ def database_summary(db: Session) -> dict:
 
 # --- deliveries: POD + tracking (new) ----------------------------------------------
 
+# --- push notifications -----------------------------------------------------------------
+
+def save_push_subscription(db: Session, driver_user_id: int, endpoint: str, p256dh: str, auth: str) -> models.PushSubscription:
+    """Upserts by endpoint — a driver re-enabling alerts on the same
+    device (e.g. after reinstalling the app) updates the existing row
+    rather than piling up duplicates."""
+    sub = db.scalar(select(models.PushSubscription).where(models.PushSubscription.endpoint == endpoint))
+    if sub:
+        sub.driver_user_id = driver_user_id
+        sub.p256dh = p256dh
+        sub.auth = auth
+    else:
+        sub = models.PushSubscription(
+            driver_user_id=driver_user_id, endpoint=endpoint, p256dh=p256dh, auth=auth,
+        )
+        db.add(sub)
+    db.flush()
+    return sub
+
+
+def remove_push_subscription(db: Session, endpoint: str) -> None:
+    sub = db.scalar(select(models.PushSubscription).where(models.PushSubscription.endpoint == endpoint))
+    if sub:
+        db.delete(sub)
+        db.flush()
+
+
+def notify_driver_new_job(db: Session, driver_user_id: int, title: str, body: str) -> None:
+    """Pushes a real notification to every device that driver has
+    enabled alerts on — best-effort in every sense: no subscriptions
+    (alerts never turned on, or VAPID keys not configured) is a silent
+    no-op, and a dead subscription (push service returns 404/410because
+    the driver uninstalled the app, say) is cleaned up rather than kept
+    around to fail forever. Never raises — a notification failing is
+    never a reason to fail the scheduling action that triggered it."""
+    if not push_client.is_configured():
+        return
+    try:
+        subs = list(db.scalars(
+            select(models.PushSubscription).where(models.PushSubscription.driver_user_id == driver_user_id)
+        ))
+        for sub in subs:
+            result = push_client.send_push(sub.endpoint, sub.p256dh, sub.auth, title, body)
+            if result.expired:
+                db.delete(sub)
+        db.flush()
+    except Exception:
+        pass  # a notification is a nice-to-have, never something that should break scheduling
+
+
 def create_delivery(
     db: Session, order_id: int,
     driver_user_id: int | None = None, driver_name: str = "",
@@ -920,6 +971,10 @@ def create_delivery(
     )
     db.add(delivery)
     db.flush()
+    if driver_user_id:
+        order = db.get(models.Order, order_id)
+        label = order.customer.display_name if order and order.customer else "a customer"
+        notify_driver_new_job(db, driver_user_id, "New job assigned", f"{label} — {order.project or 'delivery'}" if order else "A new delivery has been scheduled")
     return delivery
 
 
@@ -954,6 +1009,10 @@ def reassign_delivery(
         delivery.vehicle_id = vehicle_id
         delivery.vehicle = vehicle_row.registration if vehicle_row else ""
     db.flush()
+    if driver_user_id:
+        order = delivery.order
+        label = order.customer.display_name if order and order.customer else "a customer"
+        notify_driver_new_job(db, driver_user_id, "Job assigned to you", f"{label} — {order.project or 'delivery'}" if order else "A delivery has been reassigned to you")
     return delivery
 
 

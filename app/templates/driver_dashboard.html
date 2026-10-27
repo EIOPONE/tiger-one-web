@@ -79,6 +79,13 @@
       🔄 Your job list has been updated — tap to refresh
     </div>
 
+    {% if vapid_public_key %}
+    <button id="enable-alerts-btn" type="button" style="display:none;width:100%;background:#EEF0F1;color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-weight:700;margin-bottom:18px;">
+      🔔 Enable job alerts on this device
+    </button>
+    <div id="alerts-status" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin-bottom:18px;"></div>
+    {% endif %}
+
     <h2>Your jobs</h2>
     {% if jobs %}
       {% for j in jobs %}
@@ -116,6 +123,65 @@
       } catch (e) { /* quietly retry next cycle */ }
     }
     setInterval(checkForScheduleUpdate, 15000);
+
+    {% if vapid_public_key %}
+    // Real OS-level alerts ("New job assigned") even when this page isn't
+    // open — on top of the in-app banner above, which only catches an
+    // update while the driver happens to have the page open. Permission
+    // must be requested from a tap, not on page load, so this only ever
+    // runs off the button below.
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+      return outputArray;
+    }
+
+    const enableBtn = document.getElementById('enable-alerts-btn');
+    const statusEl = document.getElementById('alerts-status');
+
+    async function refreshAlertsUi() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing && Notification.permission === 'granted') {
+        statusEl.textContent = '🔔 Job alerts are on for this device';
+        statusEl.style.display = 'block';
+        enableBtn.style.display = 'none';
+      } else if (Notification.permission === 'denied') {
+        statusEl.textContent = 'Job alerts are blocked in this browser\'s settings';
+        statusEl.style.display = 'block';
+        enableBtn.style.display = 'none';
+      } else {
+        enableBtn.style.display = 'block';
+        statusEl.style.display = 'none';
+      }
+    }
+
+    async function enableAlerts() {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') { await refreshAlertsUi(); return; }
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array("{{ vapid_public_key }}"),
+        });
+        await fetch('/api/driver/push-subscribe', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: sub.endpoint, keys: { p256dh: sub.toJSON().keys.p256dh, auth: sub.toJSON().keys.auth } }),
+        });
+      } catch (e) { /* no-op — device/browser may not support push */ }
+      await refreshAlertsUi();
+    }
+
+    if (enableBtn) {
+      enableBtn.addEventListener('click', enableAlerts);
+      refreshAlertsUi();
+    }
+    {% endif %}
   </script>
 </body>
 </html>

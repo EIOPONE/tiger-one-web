@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
+from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from . import crud, models
 from . import pod_pdf, xero_client, report_pdf, quote_pdf, timesheet_pdf
 from . import tz
+from . import push_client
 from .database import get_session, init_db
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1507,7 +1508,35 @@ def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
         "checked_in_today": crud.driver_has_checked_in_today(db, user.user_id),
         "active_entry": crud.get_active_time_entry(db, user.user_id),
         "first_clock_point": clock_points[0] if clock_points else None,
+        "vapid_public_key": push_client.VAPID_PUBLIC_KEY if push_client.is_configured() else "",
     })
+
+
+# --- driver push notifications ---------------------------------------------------------
+# Lets a driver opt in to real OS-level alerts ("New job assigned") on
+# whichever device they're using, even when the app isn't open. One
+# subscription per device/browser — see models.PushSubscription.
+
+@app.post("/api/driver/push-subscribe")
+def driver_push_subscribe(request: Request, payload: dict = Body(...), db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return JSONResponse({"error": "Not logged in"}, status_code=401)
+    endpoint = payload.get("endpoint", "")
+    keys = payload.get("keys", {})
+    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        return JSONResponse({"error": "Incomplete subscription"}, status_code=400)
+    crud.save_push_subscription(db, user.user_id, endpoint, keys["p256dh"], keys["auth"])
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/driver/push-unsubscribe")
+def driver_push_unsubscribe(request: Request, payload: dict = Body(...), db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return JSONResponse({"error": "Not logged in"}, status_code=401)
+    crud.remove_push_subscription(db, payload.get("endpoint", ""))
+    return JSONResponse({"ok": True})
 
 
 # --- driver hours: clock in/out via QR scan --------------------------------------------

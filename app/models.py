@@ -425,6 +425,22 @@ class Vehicle(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
+class PushSubscription(Base):
+    """A driver's browser push subscription — one row per device/browser
+    they've tapped 'Enable job alerts' on (the same driver can have more
+    than one, e.g. a tablet and their own phone). Lets the server push a
+    real OS-level notification ('New job assigned') even when the driver
+    app isn't open, via the Web Push standard."""
+    __tablename__ = "push_subscriptions"
+
+    subscription_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id", ondelete="CASCADE"), nullable=False)
+    endpoint = Column(String, nullable=False, unique=True)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
 class VehicleCheck(Base):
     """A driver's daily walkaround check — modelled on the standard DVSA
     HGV walkaround checklist (the same structure apps like Predrive

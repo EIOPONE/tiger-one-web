@@ -164,6 +164,49 @@ developer.xero.com), and `XERO_REDIRECT_URI` (must be exactly
 `https://<your-render-url>/xero/callback`, entered letter-for-letter in
 the Xero app's settings too).
 
+## Push notifications (driver job alerts)
+
+A driver can tap "🔔 Enable job alerts" on their jobs page (`/driver`) to
+get a real phone/tablet notification — the kind that shows up even when
+the Tiger One app isn't open — whenever a job is scheduled or
+reassigned to them. This is on top of the existing in-app "your job
+list has been updated" banner, which only ever catches an update while
+the driver happens to have the page open.
+
+It uses the standard Web Push protocol (the same mechanism behind push
+notifications on any installed web app), which needs a VAPID keypair —
+a public/private key pair that identifies this server to the browser
+vendors' push services (Google's for Chrome, Mozilla's for Firefox,
+etc.), so they'll agree to deliver a notification on this server's
+behalf. Three environment variables need setting on Render:
+
+- `VAPID_PUBLIC_KEY=BPVVz2LuTnJ-rKXf7XY2230g9Ee61NKAS59gSsivFIFNxmb8GGE3JRHPeeQaSJocfeo4HSpcySbfOX5TKsnG5og`
+- `VAPID_PRIVATE_KEY=AfE9E4WATVtI7ENx0vesMJt8F1k230V9sOMslm8MKec`
+- `VAPID_CLAIM_EMAIL=dan-anderson@sky.com`
+
+These are a real, generated keypair — treat `VAPID_PRIVATE_KEY` like a
+password (don't share it, don't commit it anywhere); `VAPID_CLAIM_EMAIL`
+is just a contact address the push services may use to reach you if
+something's wrong with how the server is sending pushes, it's not shown
+to drivers. If you'd rather generate your own pair instead of using the
+one above, run `vapid --gen` (installed as part of `pywebpush`) and set
+the three variables from its output.
+
+Until all three variables are set, this feature is a complete no-op —
+the "Enable job alerts" button simply doesn't appear, and nothing else
+about scheduling or reassigning a job changes. Same "never breaks core
+work" principle as Traccar/Xero: a push failing to send (expired
+subscription, browser offline, misconfigured keys) never blocks
+scheduling a delivery; an expired subscription is just quietly cleaned
+up.
+
+I generated and round-trip-verified the keypair above, and confirmed
+`pywebpush` sends correctly-shaped requests, but I could not verify an
+actual notification arriving on a real phone — this sandbox has no
+route to Google's/Mozilla's push services, the same limitation as the
+OSRM/Nominatim routing calls above. Worth a real test with one driver's
+tablet once this is live, the same way the live ETA calculation was.
+
 ## Sales reports
 
 **/reports** — pick any date range (defaults to the last 7 days) and see
