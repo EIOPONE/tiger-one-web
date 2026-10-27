@@ -53,10 +53,12 @@
   <main>
     <div class="card">
       <h2>Delivery <span id="status-pill">{{ delivery.status }}</span></h2>
+      <div class="row"><span>Customer</span><span>{{ order.customer.display_name }}</span></div>
       <div class="row"><span>Driver</span><span>{{ delivery.driver_name }}</span></div>
       <div class="row"><span>Vehicle</span><span>{{ delivery.vehicle }}</span></div>
       <div class="row"><span>Project</span><span>{{ order.project }}</span></div>
       {% if order.site_address %}
+      <div class="row" style="align-items:flex-start;"><span>Site address</span><span style="white-space:normal;">{{ order.site_address }}</span></div>
       <a class="navigate-btn" href="https://www.google.com/maps/search/?api=1&query={{ order.site_address|urlencode }}" target="_blank">📍 Navigate to site</a>
       {% endif %}
     </div>

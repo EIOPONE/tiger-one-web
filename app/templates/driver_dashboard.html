@@ -19,6 +19,7 @@
     .job .order-no { font-size: 13px; color: var(--muted); font-weight: 700; }
     .job .project { font-size: 19px; font-weight: 800; margin: 2px 0 6px; }
     .job .customer { font-size: 15px; color: var(--muted); margin-bottom: 4px; }
+    .job .address { font-size: 14px; color: var(--muted); margin-bottom: 4px; display: flex; gap: 5px; align-items: flex-start; }
     .job .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #FFF0E7; color: var(--orange-dark); }
     .job .pill.delivered { background: #E7F3ED; color: var(--green); }
     .job .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
@@ -87,6 +88,7 @@
             <div class="order-no">{{ j.order.order_number }}{% if j.scheduled_date %} · {{ j.scheduled_date.strftime('%a %d %b') }}{% endif %}</div>
             <div class="project">{{ j.order.project or j.order.customer.display_name }}</div>
             <div class="customer">{{ j.order.customer.display_name }}</div>
+            {% if j.order.site_address %}<div class="address">📍 {{ j.order.site_address }}</div>{% endif %}
           </div>
           <span class="pill {{ 'delivered' if j.status == 'Delivered' }}">{{ j.status }}</span>
         </div>
