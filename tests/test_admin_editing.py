@@ -147,6 +147,64 @@ def test_deactivate_product_removes_it_from_active_list_but_keeps_the_row(db):
     assert db.get(crud.models.Product, product.product_id) is not None
 
 
+def test_update_order_details_fixes_project_and_address_without_touching_items(db):
+    customer = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Test Ltd"})
+    db.commit()
+    order = crud.save_order(db, {
+        "customer_id": customer.customer_id, "project": "Drive", "site_address": "1 Oak Ln",
+        "status": "Confirmed",
+    }, [{"description": "C30", "quantity": 5, "unit": "m3", "unit_price": 95}], "tester")
+    db.commit()
+    original_total = order.total
+
+    edited = crud.update_order_details(db, order.order_id, "Drive Slab", "14 Oak Lane, Leicester, LE2 3AB")
+    db.commit()
+
+    assert edited.order_id == order.order_id
+    assert edited.project == "Drive Slab"
+    assert edited.site_address == "14 Oak Lane, Leicester, LE2 3AB"
+    assert edited.total == original_total  # items/pricing untouched
+    assert len(edited.items) == 1
+
+
+def test_update_order_details_clears_cached_geocode_when_address_changes(db):
+    customer = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Test Ltd"})
+    db.commit()
+    order = crud.save_order(db, {
+        "customer_id": customer.customer_id, "site_address": "1 Oak Ln", "status": "Confirmed",
+    }, [{"description": "C30", "quantity": 5, "unit": "m3", "unit_price": 95}], "tester")
+    order.site_latitude = 52.6
+    order.site_longitude = -1.1
+    db.commit()
+
+    crud.update_order_details(db, order.order_id, "", "14 Oak Lane, Leicester, LE2 3AB")
+    db.commit()
+    assert order.site_latitude is None
+    assert order.site_longitude is None
+
+    # re-saving the same address shouldn't needlessly drop a cache that's still valid
+    order.site_latitude = 52.6
+    order.site_longitude = -1.1
+    db.commit()
+    crud.update_order_details(db, order.order_id, "", "14 Oak Lane, Leicester, LE2 3AB")
+    db.commit()
+    assert float(order.site_latitude) == 52.6
+
+
+def test_update_quote_details_fixes_project_and_address(db):
+    customer = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Test Ltd"})
+    db.commit()
+    quote = crud.save_quote(db, {
+        "customer_id": customer.customer_id, "project": "Drive", "site_address": "1 Oak Ln",
+    }, [{"description": "C30", "quantity": 5, "unit": "m3", "unit_price": 95}], "tester")
+    db.commit()
+
+    edited = crud.update_quote_details(db, quote.quote_id, "Drive Slab", "14 Oak Lane, Leicester, LE2 3AB")
+    db.commit()
+    assert edited.project == "Drive Slab"
+    assert edited.site_address == "14 Oak Lane, Leicester, LE2 3AB"
+
+
 def test_edit_vehicle_in_place(db):
     vehicle = crud.save_vehicle(db, "TC01", "Mixer")
     db.commit()

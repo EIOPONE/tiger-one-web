@@ -16,7 +16,7 @@
       <div><label for="project">Project</label><input type="text" id="project" name="project"></div>
     </div>
     <div class="grid-2">
-      <div><label for="site_address">Site address</label><input type="text" id="site_address" name="site_address"></div>
+      <div><label for="site_address">Site address</label><textarea id="site_address" name="site_address" rows="2" placeholder="Full delivery address, including postcode"></textarea></div>
       <div><label for="requested_date">Requested date</label><input type="date" id="requested_date" name="requested_date"></div>
     </div>
 
@@ -53,7 +53,10 @@
     <tr>
       <td>{{ q.quote_number }}</td>
       <td>{{ q.customer.display_name }}</td>
-      <td>{{ q.project }}</td>
+      <td>
+        {{ q.project }}
+        {% if q.site_address %}<div class="muted" style="font-size:12px;margin-top:2px;white-space:pre-line;">📍 {{ q.site_address }}</div>{% endif %}
+      </td>
       <td class="right">£{{ "%.2f"|format(q.total) }}</td>
       <td><span class="pill pill-{{ q.status|lower|replace(' ', '-') }}">{{ q.status }}</span></td>
       <td>
@@ -71,6 +74,7 @@
         {% endif %}
       </td>
       <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-quote-{{ q.quote_id }}')">Edit</button>
         {% if not q.converted_orders %}
           {% if q.status == 'Draft' %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Issued"><button class="btn btn-outline btn-small" type="submit">Issue</button></form>{% endif %}
           {% if q.status in ['Draft', 'Issued'] %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Accepted"><button class="btn btn-outline btn-small" type="submit">Accept</button></form>{% endif %}
@@ -82,6 +86,23 @@
           <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
         </form>
         {% endif %}
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-quote-{{ q.quote_id }}">
+      <td colspan="7">
+        <div class="card-inline">
+          <form method="post" action="/quotes/{{ q.quote_id }}/edit-details">
+            <div class="grid-2">
+              <div><label>Project</label><input type="text" name="project" value="{{ q.project }}"></div>
+              <div><label>Site address</label><textarea name="site_address" rows="2" placeholder="Full delivery address, including postcode">{{ q.site_address }}</textarea></div>
+            </div>
+            <p class="muted" style="font-size:12px;margin:6px 0 0;">Only the project name and site address can be changed here — to change lines, items or pricing, cancel this quote and raise a new one.</p>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-quote-{{ q.quote_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
       </td>
     </tr>
     {% endfor %}

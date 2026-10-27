@@ -16,7 +16,7 @@
       <div><label for="project">Project</label><input type="text" id="project" name="project"></div>
     </div>
     <div class="grid-2">
-      <div><label for="site_address">Site address</label><input type="text" id="site_address" name="site_address"></div>
+      <div><label for="site_address">Site address</label><textarea id="site_address" name="site_address" rows="2" placeholder="Full delivery address, including postcode"></textarea></div>
       <div><label for="requested_date">Requested date</label><input type="date" id="requested_date" name="requested_date"></div>
     </div>
 
@@ -47,7 +47,7 @@
   <h2>All orders</h2>
   {% if orders %}
   <table>
-    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Xero</th><th>Delivery</th><th>Actions</th></tr>
+    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Xero</th><th>Driver link ↗</th><th>Actions</th></tr>
     {% for o in orders %}
     <tr id="order-{{ o.order_id }}">
       <td>
@@ -55,7 +55,10 @@
         {% if o.source_quote %}<div class="muted" style="font-size:11px;">from {{ o.source_quote.quote_number }}</div>{% endif %}
       </td>
       <td>{{ o.customer.display_name }}</td>
-      <td>{{ o.project }}</td>
+      <td>
+        {{ o.project }}
+        {% if o.site_address %}<div class="muted" style="font-size:12px;margin-top:2px;white-space:pre-line;">📍 {{ o.site_address }}</div>{% endif %}
+      </td>
       <td class="right">£{{ "%.2f"|format(o.total) }}</td>
       <td><span class="pill pill-{{ o.status|lower|replace(' ', '-') }}">{{ o.status }}</span></td>
       <td>
@@ -128,6 +131,7 @@
         {% endif %}
       </td>
       <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-order-{{ o.order_id }}')">Edit</button>
         {% if o.status == 'Draft' %}<form method="post" action="/orders/{{ o.order_id }}/status"><input type="hidden" name="status" value="Confirmed"><button class="btn btn-outline btn-small" type="submit">Confirm</button></form>{% endif %}
         {% if o.status in ['Draft', 'Confirmed'] %}<form method="post" action="/orders/{{ o.order_id }}/status"><input type="hidden" name="status" value="Cancelled"><button class="btn btn-outline btn-small" type="submit">Cancel</button></form>{% endif %}
         {% if o.status == 'Confirmed' %}<form method="post" action="/orders/{{ o.order_id }}/status"><input type="hidden" name="status" value="Completed"><button class="btn btn-outline btn-small" type="submit">Complete</button></form>{% endif %}
@@ -137,6 +141,23 @@
           <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
         </form>
         {% endif %}
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-order-{{ o.order_id }}">
+      <td colspan="9">
+        <div class="card-inline">
+          <form method="post" action="/orders/{{ o.order_id }}/edit-details">
+            <div class="grid-2">
+              <div><label>Project</label><input type="text" name="project" value="{{ o.project }}"></div>
+              <div><label>Site address</label><textarea name="site_address" rows="2" placeholder="Full delivery address, including postcode">{{ o.site_address }}</textarea></div>
+            </div>
+            <p class="muted" style="font-size:12px;margin:6px 0 0;">Only the project name and site address can be changed here — to change lines, items or pricing, cancel this order and raise a new one.</p>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-order-{{ o.order_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
       </td>
     </tr>
     {% endfor %}

@@ -622,6 +622,16 @@ async def quotes_new(request: Request, db: Session = Depends(db_dependency)):
     return RedirectResponse("/quotes", status_code=303)
 
 
+@app.post("/quotes/{quote_id}/edit-details")
+def quotes_edit_details(request: Request, quote_id: int, project: str = Form(""), site_address: str = Form(""),
+                         db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.update_quote_details(db, quote_id, project, site_address)
+    return RedirectResponse("/quotes", status_code=303)
+
+
 @app.post("/quotes/{quote_id}/status")
 def quotes_status(request: Request, quote_id: int, status: str = Form(...), db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
@@ -802,6 +812,16 @@ async def orders_new(request: Request, db: Session = Depends(db_dependency)):
         "status": form.get("status", "Draft"), "tax_rate": float(form.get("tax_rate") or 20),
         "allocate_stock": form.get("allocate_stock") == "true",
     }, items, user.full_name)
+    return RedirectResponse("/orders", status_code=303)
+
+
+@app.post("/orders/{order_id}/edit-details")
+def orders_edit_details(request: Request, order_id: int, project: str = Form(""), site_address: str = Form(""),
+                         db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.update_order_details(db, order_id, project, site_address)
     return RedirectResponse("/orders", status_code=303)
 
 

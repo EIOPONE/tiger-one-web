@@ -483,6 +483,19 @@ def _prepare_items(items: list[dict]) -> tuple[list[dict], Decimal]:
     return prepared, money(subtotal)
 
 
+def update_quote_details(db: Session, quote_id: int, project: str, site_address: str) -> models.Quote:
+    """Lets the office fix the project name/site address after a quote's
+    been saved — e.g. a site address that was typed too short or pasted
+    wrong — without touching its lines, totals or status."""
+    quote = db.get(models.Quote, quote_id)
+    if not quote:
+        raise ValueError("Quote not found")
+    quote.project = project.strip()
+    quote.site_address = site_address.strip()
+    db.flush()
+    return quote
+
+
 def save_quote(db: Session, header: dict, items: list[dict], username: str, quote_id: int | None = None) -> models.Quote:
     prepared, subtotal = _prepare_items(items)
     tax_rate = Decimal(str(header.get("tax_rate", 20) or 0))
@@ -642,6 +655,25 @@ def delete_quote(db: Session, quote_id: int) -> None:
 
 
 # --- orders ------------------------------------------------------------------------
+
+def update_order_details(db: Session, order_id: int, project: str, site_address: str) -> models.Order:
+    """Lets the office fix the project name/site address after an order's
+    been saved — e.g. the delivery driver flagged the address got cut
+    short — without touching its lines, totals, status or stock
+    allocation. Also clears the cached geocode so the next ETA refresh
+    re-geocodes the corrected address instead of reusing the old one."""
+    order = db.get(models.Order, order_id)
+    if not order:
+        raise ValueError("Order not found")
+    new_address = site_address.strip()
+    if new_address != order.site_address:
+        order.site_latitude = None
+        order.site_longitude = None
+    order.project = project.strip()
+    order.site_address = new_address
+    db.flush()
+    return order
+
 
 def save_order(db: Session, header: dict, items: list[dict], username: str, order_id: int | None = None) -> models.Order:
     prepared, subtotal = _prepare_items(items)
