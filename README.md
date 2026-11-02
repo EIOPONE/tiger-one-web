@@ -174,7 +174,11 @@ time or driver, or drag its bottom edge to shorten/stretch it in 15-minute
 steps. A driver can't be double-booked: an overlapping drop shows red and
 snaps back. Dropping a job back on the left panel unassigns it. The driver's
 own job list follows the timetable order and shows each job's time window.
-Works with touch as well as a mouse. Needs two new `deliveries` columns
+Click (or tap) any empty slot to add a non-delivery task — yard work,
+maintenance, vehicle servicing, training, other — with a length, notes and
+driver; it sits in the timetable like a job (move, stretch, click to edit or
+delete, and it blocks double-booking) and shows on that driver's app under
+"Other tasks". Works with touch as well as a mouse. Needs two new `deliveries` columns
 (`start_minutes`, `duration_minutes`), added automatically on deploy.
 
 ## Push notifications (driver job alerts)

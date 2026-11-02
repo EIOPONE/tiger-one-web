@@ -108,6 +108,18 @@
     {% else %}
       <div class="empty">No jobs assigned to you right now.<br>Check back later or ask the office.</div>
     {% endif %}
+
+    {% if tasks %}
+    <h2>Other tasks</h2>
+    {% for t in tasks %}
+    <div class="job">
+      <div class="order-no">{{ t.entry_date.strftime('%a %d %b') }} · {{ '%02d:%02d' % (t.start_minutes // 60, t.start_minutes % 60) }}–{{ '%02d:%02d' % ((t.start_minutes + t.duration_minutes) // 60, (t.start_minutes + t.duration_minutes) % 60) }}</div>
+      <div class="project">🔧 {{ t.title }}</div>
+      <div class="customer">{{ t.category }}</div>
+      {% if t.notes %}<div class="customer" style="white-space:pre-line;">{{ t.notes }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
   </main>
   <script>
     const initialJobIds = [{% for j in jobs %}{{ j.delivery_id }}{% if not loop.last %},{% endif %}{% endfor %}].sort();

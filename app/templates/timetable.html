@@ -2,7 +2,7 @@
 {% block title %}Timetable — Tiger One{% endblock %}
 {% block body_class %}wide-page{% endblock %}
 {% block page_title %}Timetable{% endblock %}
-{% block page_subtitle %}Each driver's day in 15-minute blocks. Drag a job from the left into a slot (new jobs start at 2 hours), drag a job to move it, or drag its bottom edge to shorten or stretch it.{% endblock %}
+{% block page_subtitle %}Each driver's day in 15-minute blocks. Drag a job from the left into a slot (new jobs start at 2 hours), drag a job to move it, or drag its bottom edge to shorten or stretch it. Click an empty slot to add yard work, maintenance or any other task.{% endblock %}
 {% block page_actions %}
 <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap;white-space:nowrap;">
   <button type="button" class="btn btn-outline btn-small" onclick="shiftDay(-1)">‹</button>
@@ -46,12 +46,23 @@
   .tblock .rz { position: absolute; left: 0; right: 0; bottom: 0; height: 9px; cursor: ns-resize; touch-action: none; background: linear-gradient(to bottom, transparent, rgba(0,0,0,.12)); }
   .tblock.ghost { position: fixed; z-index: 1000; pointer-events: none; }
   .tblock.short .meta { display: none; }
+  .tblock.task { background: #EEF0F1; border-color: #70757C; border-left-color: #70757C; }
+  .tblock.task .tt { color: #4A4F55; }
+  .tcol { cursor: cell; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; max-height: 92vh; overflow-y: auto; }
+  .modal h3 { margin: 0 0 12px; }
+  .modal label { display: block; margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--muted); }
+  .modal input, .modal select, .modal textarea { width: 100%; }
+  .modal .err { color: #B42318; font-size: 13px; margin-top: 10px; min-height: 16px; }
+  .modal .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 </style>
 
 <div class="tt-wrap">
   <aside class="tt-side" id="side">
     <h3>To schedule</h3>
-    <p class="hint">Drag into a driver's slot. Drop a placed job back here to unassign it.</p>
+    <p class="hint">Drag into a driver's slot. Drop a placed job back here to unassign it. Click any empty slot to add yard work, maintenance etc.</p>
     {% for o in unassigned_orders %}
     <div class="tt-item" data-order-id="{{ o.order_id }}" data-dur="{{ default_minutes }}">
       <div class="no">{{ o.order_number }}</div>
@@ -99,10 +110,46 @@
           {% if not locked %}<div class="rz" title="Drag to change length"></div>{% endif %}
         </div>
         {% endfor %}
+        {% for t in entries if t.driver_user_id == d.user_id %}
+        <div class="tblock task {{ 'short' if t.duration_minutes <= 30 }}"
+             data-entry-id="{{ t.entry_id }}" data-title="{{ t.title }}" data-category="{{ t.category }}" data-notes="{{ t.notes }}"
+             data-start="{{ t.start_minutes }}" data-dur="{{ t.duration_minutes }}" data-locked="0"
+             style="top: {{ ((t.start_minutes - day_start) // slot) * row }}px; height: {{ (t.duration_minutes // slot) * row }}px;">
+          <div class="no"><span class="tt">{{ fmt(t.start_minutes) }}–{{ fmt(t.start_minutes + t.duration_minutes) }}</span> 🔧 {{ t.title }}</div>
+          <div class="meta">{{ t.category }}{% if t.notes %} — {{ t.notes }}{% endif %}</div>
+          <div class="rz" title="Drag to change length"></div>
+        </div>
+        {% endfor %}
       </div>
       {% endfor %}
     </div>
     {% endif %}
+  </div>
+</div>
+
+<div class="modal-bg" id="task-modal">
+  <div class="modal">
+    <h3 id="task-modal-title">Add task</h3>
+    <label>What is it?</label>
+    <input type="text" id="t-title" placeholder="e.g. Yard tidy, Mixer service, Wash trucks">
+    <div class="row2">
+      <div><label>Type</label>
+        <select id="t-category">{% for c in entry_categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+      <div><label>Driver</label>
+        <select id="t-driver">{% for d in drivers %}<option value="{{ d.user_id }}">{{ d.full_name }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="row2">
+      <div><label>Starts</label><select id="t-start"></select></div>
+      <div><label>Length</label><select id="t-dur"></select></div>
+    </div>
+    <label>Notes (optional)</label>
+    <textarea id="t-notes" rows="2"></textarea>
+    <div class="err" id="t-err"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button type="button" class="btn btn-primary" id="t-save">Save</button>
+      <button type="button" class="btn btn-outline" id="t-cancel">Cancel</button>
+      <button type="button" class="btn btn-outline" id="t-delete" style="margin-left:auto;color:#B42318;display:none;">Delete</button>
+    </div>
   </div>
 </div>
 
@@ -152,6 +199,13 @@
     let body = {}; try { body = await res.json(); } catch (e) {}
     return { ok: res.ok, error: body.error || 'That didn\'t work.' };
   }
+  // A placed block is either a delivery or a task (yard work etc) — each has its own save endpoint.
+  function blockSave(b, col, start, dur) {
+    if (b.dataset.entryId) {
+      return post('/timetable/entry/place', { entry_id: b.dataset.entryId, driver_id: col.dataset.driverId, start_minutes: start, duration_minutes: dur });
+    }
+    return post('/timetable/place', { delivery_id: b.dataset.deliveryId, driver_id: col.dataset.driverId, start_minutes: start, duration_minutes: dur });
+  }
   function inside(el, x, y) { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; }
 
   // --- move a placed job (to another time and/or another driver) -------------------------
@@ -172,16 +226,16 @@
         const start = clamp(pxToMin(ev.clientY - grabY - col.getBoundingClientRect().top), DAY_START, DAY_END - dur);
         setBlock(b, start, dur);
         b.classList.toggle('clash', overlapping(col, start, dur, b));
-        side.classList.toggle('drop-hint', inside(side, ev.clientX, ev.clientY));
+        side.classList.toggle('drop-hint', !b.dataset.entryId && inside(side, ev.clientX, ev.clientY));
       };
       const up = async (ev) => {
         b.removeEventListener('pointermove', move);
         b.removeEventListener('pointerup', up);
         b.removeEventListener('pointercancel', up);
         b.classList.remove('dragging'); side.classList.remove('drop-hint');
-        if (!moved) return;
+        if (!moved) { if (b.dataset.entryId) openTaskModal({ entry: b }); return; }
         const revert = () => { orig.col.appendChild(b); setBlock(b, orig.start, orig.dur); b.classList.remove('clash'); };
-        if (inside(side, ev.clientX, ev.clientY)) {
+        if (inside(side, ev.clientX, ev.clientY) && !b.dataset.entryId) {
           const r = await post('/kanban/unassign', { delivery_id: b.dataset.deliveryId });
           if (r.ok) location.reload(); else { alert(r.error); revert(); }
           return;
@@ -189,10 +243,7 @@
         const col = b.parentElement, start = +b.dataset.start;
         if (b.classList.contains('clash')) { revert(); return; }
         if (col === orig.col && start === orig.start) return;
-        const r = await post('/timetable/place', {
-          delivery_id: b.dataset.deliveryId, driver_id: col.dataset.driverId,
-          start_minutes: start, duration_minutes: orig.dur,
-        });
+        const r = await blockSave(b, col, start, orig.dur);
         if (!r.ok) { alert(r.error); revert(); }
       };
       b.addEventListener('pointermove', move);
@@ -224,10 +275,7 @@
         rz.removeEventListener('pointercancel', up);
         const dur = +b.dataset.dur;
         if (dur === origDur) return;
-        const r = await post('/timetable/place', {
-          delivery_id: b.dataset.deliveryId, driver_id: col.dataset.driverId,
-          start_minutes: start, duration_minutes: dur,
-        });
+        const r = await blockSave(b, col, start, dur);
         if (!r.ok) { alert(r.error); setBlock(b, start, origDur); }
       };
       rz.addEventListener('pointermove', move);
@@ -291,6 +339,57 @@
       item.addEventListener('pointercancel', up);
     });
   });
+
+  // --- add / edit a task (yard work, maintenance, ...) -------------------------------------
+  const modal = document.getElementById('task-modal');
+  const tStart = document.getElementById('t-start'), tDur = document.getElementById('t-dur');
+  for (let m = DAY_START; m < DAY_END; m += SLOT) tStart.add(new Option(fmt(m), m));
+  for (let d = SLOT; d <= 12 * 60; d += SLOT) {
+    const h = Math.floor(d / 60), mm = d % 60;
+    tDur.add(new Option((h ? h + 'h ' : '') + (mm ? mm + 'm' : '') , d));
+  }
+  let editingEntryId = 0;
+  function openTaskModal({ col, start, entry }) {
+    document.getElementById('t-err').textContent = '';
+    editingEntryId = entry ? +entry.dataset.entryId : 0;
+    document.getElementById('task-modal-title').textContent = entry ? 'Edit task' : 'Add task';
+    document.getElementById('t-delete').style.display = entry ? 'block' : 'none';
+    const c = entry ? entry.parentElement : col;
+    document.getElementById('t-driver').value = c.dataset.driverId;
+    document.getElementById('t-title').value = entry ? entry.dataset.title : '';
+    document.getElementById('t-category').value = entry ? entry.dataset.category : 'Yard work';
+    document.getElementById('t-notes').value = entry ? entry.dataset.notes : '';
+    tStart.value = entry ? entry.dataset.start : start;
+    tDur.value = entry ? entry.dataset.dur : 60;
+    modal.classList.add('open');
+    document.getElementById('t-title').focus();
+  }
+  function closeTaskModal() { modal.classList.remove('open'); }
+  document.getElementById('t-cancel').onclick = closeTaskModal;
+  modal.addEventListener('pointerdown', (e) => { if (e.target === modal) closeTaskModal(); });
+  document.getElementById('t-save').onclick = async () => {
+    const r = await post('/timetable/entry/save', {
+      entry_id: editingEntryId, board_date: BOARD_DATE,
+      driver_id: document.getElementById('t-driver').value,
+      start_minutes: tStart.value, duration_minutes: tDur.value,
+      title: document.getElementById('t-title').value,
+      category: document.getElementById('t-category').value,
+      notes: document.getElementById('t-notes').value,
+    });
+    if (r.ok) location.reload(); else document.getElementById('t-err').textContent = r.error;
+  };
+  document.getElementById('t-delete').onclick = async () => {
+    if (!confirm('Delete this task?')) return;
+    const r = await post('/timetable/entry/delete', { entry_id: editingEntryId });
+    if (r.ok) location.reload();
+  };
+  // Click (or tap) an empty part of a driver's column to add a task there.
+  cols.forEach(col => col.addEventListener('click', (e) => {
+    if (e.target !== col) return;
+    const y = e.clientY - col.getBoundingClientRect().top;
+    const start = clamp(DAY_START + Math.floor(y / ROW) * SLOT, DAY_START, DAY_END - SLOT);
+    openTaskModal({ col, start });
+  }));
 
   // Open scrolled to the start of the working day's busy part (8am is the top; nothing to do),
   // or to the first job if there is one far down.

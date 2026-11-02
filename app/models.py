@@ -446,6 +446,26 @@ class PushSubscription(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
+class ScheduleEntry(Base):
+    """A non-delivery item in a driver's timetable day — yard work,
+    maintenance, training, anything that takes their time when there's no
+    job on. Occupies the same 15-minute slots as a delivery, so a driver
+    can't be double-booked across the two."""
+    __tablename__ = "schedule_entries"
+
+    entry_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id", ondelete="CASCADE"), nullable=False)
+    entry_date = Column(Date, nullable=False)
+    start_minutes = Column(Integer, nullable=False)
+    duration_minutes = Column(Integer, nullable=False, default=60)
+    title = Column(String, nullable=False)
+    category = Column(String, nullable=False, default="Other")
+    notes = Column(String, nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    driver_user = relationship("AppUser")
+
+
 class VehicleCheck(Base):
     """A driver's daily walkaround check — modelled on the standard DVSA
     HGV walkaround checklist (the same structure apps like Predrive

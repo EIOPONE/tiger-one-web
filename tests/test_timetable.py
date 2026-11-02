@@ -88,3 +88,43 @@ def test_driver_list_follows_timetable_order(db):
     early = crud.schedule_order_at_slot(db, orders[1].order_id, driver.user_id, DAY, 8 * 60)
     db.commit()
     assert [x.delivery_id for x in crud.deliveries_for_driver(db, driver.user_id)] == [early.delivery_id, late.delivery_id]
+
+
+def test_schedule_entry_add_edit_delete(db):
+    _, driver = _setup(db, 0)
+    e = crud.save_schedule_entry(db, driver.user_id, DAY, 13 * 60, 90, "Yard tidy", "Yard work", "Sweep up")
+    db.commit()
+    assert (e.start_minutes, e.duration_minutes, e.category) == (780, 90, "Yard work")
+    crud.move_schedule_entry(db, e.entry_id, driver.user_id, 14 * 60, 30)
+    assert (e.start_minutes, e.duration_minutes) == (840, 30)
+    crud.delete_schedule_entry(db, e.entry_id)
+    assert crud.entries_for_date(db, DAY) == []
+
+
+def test_schedule_entry_needs_a_title_and_unknown_category_becomes_other(db):
+    _, driver = _setup(db, 0)
+    with pytest.raises(ValueError):
+        crud.save_schedule_entry(db, driver.user_id, DAY, 540, 60, "  ")
+    e = crud.save_schedule_entry(db, driver.user_id, DAY, 540, 60, "Thing", "Nonsense")
+    assert e.category == "Other"
+
+
+def test_tasks_and_deliveries_cannot_double_book_a_driver(db):
+    (order,), driver = _setup(db)
+    crud.save_schedule_entry(db, driver.user_id, DAY, 9 * 60, 60, "Mixer service", "Maintenance")
+    db.commit()
+    with pytest.raises(ValueError, match="Clashes with Mixer service"):
+        crud.schedule_order_at_slot(db, order.order_id, driver.user_id, DAY, 9 * 60 + 30)
+    d = crud.schedule_order_at_slot(db, order.order_id, driver.user_id, DAY, 10 * 60)  # right after: fine
+    with pytest.raises(ValueError, match="Clashes"):
+        crud.save_schedule_entry(db, driver.user_id, DAY, 11 * 60, 60, "Overlaps job", "Other")
+    assert d.start_minutes == 600
+
+
+def test_driver_sees_their_upcoming_tasks(db):
+    _, dan = _setup(db, 0)
+    sam = crud.create_driver(db, "Sam Driver", "sam", "1234")
+    crud.save_schedule_entry(db, dan.user_id, DAY, 540, 60, "Dan's task", "Other")
+    crud.save_schedule_entry(db, sam.user_id, DAY, 540, 60, "Sam's task", "Other")
+    db.commit()
+    assert [t.title for t in crud.entries_for_driver(db, dan.user_id, DAY)] == ["Dan's task"]

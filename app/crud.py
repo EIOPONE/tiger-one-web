@@ -1127,7 +1127,7 @@ def fmt_minutes(minutes: int) -> str:
 
 
 def _validate_slot(db: Session, driver_user_id: int, for_date, start: int, duration: int,
-                   exclude_delivery_id: int | None = None) -> None:
+                   exclude_delivery_id: int | None = None, exclude_entry_id: int | None = None) -> None:
     if start % TIMETABLE_SLOT_MIN or duration % TIMETABLE_SLOT_MIN or duration < TIMETABLE_SLOT_MIN:
         raise ValueError("Jobs go in 15-minute blocks")
     if start < TIMETABLE_START_MIN or start + duration > TIMETABLE_END_MIN:
@@ -1146,6 +1146,83 @@ def _validate_slot(db: Session, driver_user_id: int, for_date, start: int, durat
                 f"Clashes with {other.order.order_number} "
                 f"({fmt_minutes(other.start_minutes)}-{fmt_minutes(other.start_minutes + other.duration_minutes)})"
             )
+    entries = select(models.ScheduleEntry).where(
+        models.ScheduleEntry.driver_user_id == driver_user_id,
+        models.ScheduleEntry.entry_date == for_date,
+    )
+    if exclude_entry_id:
+        entries = entries.where(models.ScheduleEntry.entry_id != exclude_entry_id)
+    for other in db.scalars(entries):
+        if start < other.start_minutes + other.duration_minutes and other.start_minutes < start + duration:
+            raise ValueError(
+                f"Clashes with {other.title} "
+                f"({fmt_minutes(other.start_minutes)}-{fmt_minutes(other.start_minutes + other.duration_minutes)})"
+            )
+
+
+ENTRY_CATEGORIES = ["Yard work", "Maintenance", "Vehicle servicing", "Training", "Other"]
+
+
+def entries_for_date(db: Session, for_date) -> list[models.ScheduleEntry]:
+    return list(db.scalars(
+        select(models.ScheduleEntry).where(models.ScheduleEntry.entry_date == for_date)
+        .order_by(models.ScheduleEntry.start_minutes)
+    ))
+
+
+def entries_for_driver(db: Session, driver_user_id: int, from_date) -> list[models.ScheduleEntry]:
+    """A driver's non-delivery tasks from a date onwards — shown on their app."""
+    return list(db.scalars(
+        select(models.ScheduleEntry).where(
+            models.ScheduleEntry.driver_user_id == driver_user_id,
+            models.ScheduleEntry.entry_date >= from_date,
+        ).order_by(models.ScheduleEntry.entry_date, models.ScheduleEntry.start_minutes)
+    ))
+
+
+def save_schedule_entry(db: Session, driver_user_id: int, for_date, start_minutes: int,
+                        duration_minutes: int, title: str, category: str = "Other", notes: str = "",
+                        entry_id: int | None = None) -> models.ScheduleEntry:
+    title = title.strip()
+    if not title:
+        raise ValueError("Give the task a name (e.g. 'Yard tidy')")
+    if not db.get(models.AppUser, driver_user_id):
+        raise ValueError("Driver not found")
+    if category not in ENTRY_CATEGORIES:
+        category = "Other"
+    _validate_slot(db, driver_user_id, for_date, start_minutes, duration_minutes, exclude_entry_id=entry_id)
+    if entry_id:
+        entry = db.get(models.ScheduleEntry, entry_id)
+        if not entry:
+            raise ValueError("Task not found")
+    else:
+        entry = models.ScheduleEntry(entry_date=for_date)
+        db.add(entry)
+    entry.driver_user_id = driver_user_id
+    entry.entry_date = for_date
+    entry.start_minutes = start_minutes
+    entry.duration_minutes = duration_minutes
+    entry.title = title
+    entry.category = category
+    entry.notes = notes.strip()
+    db.flush()
+    return entry
+
+
+def move_schedule_entry(db: Session, entry_id: int, driver_user_id: int, start_minutes: int,
+                        duration_minutes: int) -> models.ScheduleEntry:
+    entry = db.get(models.ScheduleEntry, entry_id)
+    if not entry:
+        raise ValueError("Task not found")
+    return save_schedule_entry(db, driver_user_id, entry.entry_date, start_minutes, duration_minutes,
+                               entry.title, entry.category, entry.notes, entry_id=entry_id)
+
+
+def delete_schedule_entry(db: Session, entry_id: int) -> None:
+    entry = db.get(models.ScheduleEntry, entry_id)
+    if entry:
+        db.delete(entry)
+        db.flush()
 
 
 def _resequence_driver_day(db: Session, driver_user_id: int, for_date) -> None:

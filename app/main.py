@@ -797,6 +797,8 @@ def timetable_page(request: Request, board_date: str = "", db: Session = Depends
         "user": user, "active": "kanban", "board_date": board_date,
         "drivers": drivers, "unassigned_orders": unassigned_orders,
         "waiting": waiting, "timed": timed,
+        "entries": crud.entries_for_date(db, date.fromisoformat(board_date)),
+        "entry_categories": crud.ENTRY_CATEGORIES,
         "day_start": crud.TIMETABLE_START_MIN, "day_end": crud.TIMETABLE_END_MIN,
         "slot": crud.TIMETABLE_SLOT_MIN, "default_minutes": crud.DEFAULT_JOB_MINUTES,
         "fmt": crud.fmt_minutes,
@@ -826,6 +828,50 @@ def timetable_place(request: Request, driver_id: int = Form(...), start_minutes:
         db.rollback()
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
     return {"ok": True, "delivery_id": delivery.delivery_id}
+
+
+@app.post("/timetable/entry/save")
+def timetable_entry_save(request: Request, driver_id: int = Form(...), board_date: str = Form(...),
+                         start_minutes: int = Form(...), duration_minutes: int = Form(...),
+                         title: str = Form(""), category: str = Form("Other"), notes: str = Form(""),
+                         entry_id: int = Form(0), db: Session = Depends(db_dependency)):
+    """Add or edit a non-delivery task (yard work, maintenance...) in a
+    driver's day."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        entry = crud.save_schedule_entry(db, driver_id, date.fromisoformat(board_date), start_minutes,
+                                         duration_minutes, title, category, notes, entry_id=entry_id or None)
+    except ValueError as exc:
+        db.rollback()
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True, "entry_id": entry.entry_id}
+
+
+@app.post("/timetable/entry/place")
+def timetable_entry_place(request: Request, entry_id: int = Form(...), driver_id: int = Form(...),
+                          start_minutes: int = Form(...), duration_minutes: int = Form(...),
+                          db: Session = Depends(db_dependency)):
+    """Drag-move or resize of an existing task."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        crud.move_schedule_entry(db, entry_id, driver_id, start_minutes, duration_minutes)
+    except ValueError as exc:
+        db.rollback()
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True}
+
+
+@app.post("/timetable/entry/delete")
+def timetable_entry_delete(request: Request, entry_id: int = Form(...), db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    crud.delete_schedule_entry(db, entry_id)
+    return {"ok": True}
 
 
 @app.get("/api/driver/jobs-snapshot")
@@ -1570,6 +1616,7 @@ def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
         "active_entry": crud.get_active_time_entry(db, user.user_id),
         "first_clock_point": clock_points[0] if clock_points else None,
         "vapid_public_key": push_client.VAPID_PUBLIC_KEY if push_client.is_configured() else "",
+        "tasks": crud.entries_for_driver(db, user.user_id, date.today()),
     })
 
 
