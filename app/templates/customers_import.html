@@ -26,6 +26,7 @@
 <div class="card">
   <h2>Import result</h2>
   <p><strong>{{ result.created }}</strong> customer(s) created.
+     {% if result.duplicates %}<strong>{{ result.duplicates }}</strong> already in Tiger One (left untouched).{% endif %}
      {% if result.skipped %}<strong>{{ result.skipped }}</strong> row(s) skipped.{% endif %}</p>
   {% if result.errors %}
   <p class="muted" style="font-size:13px;">Details:</p>

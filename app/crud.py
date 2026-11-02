@@ -282,8 +282,11 @@ def import_customers_csv(db: Session, csv_text: str) -> dict:
         "display_name": {"display_name", "name", "customer", "customer name", "company", "company name"},
         "customer_type": {"customer_type", "type"},
         "contact_name": {"contact_name", "contact", "contact person", "contact name"},
-        "telephone": {"telephone", "phone", "tel", "landline"},
-        "mobile": {"mobile", "cell", "mobile number"},
+        "telephone": {"telephone", "phone", "tel", "landline", "phone number"},
+        "mobile": {"mobile", "cell", "mobile number", "sms phone number", "sms phone"},
+        "first_name": {"first name", "firstname", "first_name"},
+        "last_name": {"last name", "lastname", "last_name", "surname"},
+        "secondary_email": {"secondary email", "secondary_email", "email 2", "second email"},
         "email": {"email", "email address"},
         "address_1": {"address_1", "address1", "address", "address line 1"},
         "address_2": {"address_2", "address2", "address line 2"},
@@ -303,26 +306,43 @@ def import_customers_csv(db: Session, csv_text: str) -> dict:
                 field_map[header] = target
                 break
 
-    created, skipped, errors = 0, 0, []
+    existing_names = {
+        (n or "").strip().lower()
+        for n in db.scalars(select(models.Customer.display_name))
+    }
+    created, skipped, duplicates, errors = 0, 0, 0, []
     for i, row in enumerate(reader, start=2):  # row 1 is the header
         values = {}
         for header, raw in row.items():
             target = field_map.get(header)
             if target:
                 values[target] = (raw or "").strip()
+        person_name = " ".join(p for p in (values.get("first_name", ""), values.get("last_name", "")) if p)
         display_name = values.get("display_name", "")
+        derived_from_person = False
+        if not display_name and person_name:
+            # e.g. a Xero contact with no company — trade under their own name
+            display_name = person_name
+            derived_from_person = True
         if not display_name:
             skipped += 1
-            errors.append(f"Row {i}: no name/display name column value — skipped")
+            errors.append(f"Row {i}: no name/company/first-last name — skipped")
             continue
-        customer_type = values.get("customer_type") or "Commercial"
+        if display_name.lower() in existing_names:
+            duplicates += 1
+            continue
+        customer_type = values.get("customer_type") or ("Private" if derived_from_person else "Commercial")
         if customer_type not in ("Commercial", "Private"):
             customer_type = "Commercial"
+        notes = values.get("notes", "")
+        if values.get("secondary_email"):
+            extra = f"Secondary email: {values['secondary_email']}"
+            notes = f"{notes}\n{extra}".strip()
         try:
             save_customer(db, {
                 "customer_type": customer_type,
                 "display_name": display_name,
-                "contact_name": values.get("contact_name", ""),
+                "contact_name": values.get("contact_name") or (person_name if not derived_from_person else ""),
                 "telephone": values.get("telephone", ""),
                 "mobile": values.get("mobile", ""),
                 "email": values.get("email", ""),
@@ -332,16 +352,17 @@ def import_customers_csv(db: Session, csv_text: str) -> dict:
                 "postcode": values.get("postcode", ""),
                 "payment_terms": values.get("payment_terms", ""),
                 "customer_group": values.get("customer_group", ""),
-                "notes": values.get("notes", ""),
-            })
+                "notes": notes,
+            }, sync_xero=False)  # these customers came from Xero already
+            existing_names.add(display_name.lower())
             created += 1
         except Exception as exc:  # keep going — one bad row shouldn't kill the whole import
             skipped += 1
             errors.append(f"Row {i} ({display_name}): {exc}")
-    return {"created": created, "skipped": skipped, "errors": errors}
+    return {"created": created, "skipped": skipped, "duplicates": duplicates, "errors": errors}
 
 
-def save_customer(db: Session, values: dict, customer_id: int | None = None) -> models.Customer:
+def save_customer(db: Session, values: dict, customer_id: int | None = None, sync_xero: bool = True) -> models.Customer:
     is_new = customer_id is None
     if customer_id:
         customer = db.get(models.Customer, customer_id)
@@ -351,7 +372,7 @@ def save_customer(db: Session, values: dict, customer_id: int | None = None) -> 
         customer = models.Customer(**values)
         db.add(customer)
     db.flush()
-    if is_new:
+    if is_new and sync_xero:
         sync_customer_to_xero(db, customer, XERO_CLIENT_ID, XERO_CLIENT_SECRET)
     return customer
 

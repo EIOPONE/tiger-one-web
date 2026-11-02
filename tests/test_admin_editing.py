@@ -316,3 +316,38 @@ def test_import_customers_csv_recognises_alternate_headers(db):
     assert result["created"] == 1
     customer = db.query(crud.models.Customer).filter_by(display_name="Alt Header Co").one()
     assert customer.payment_terms == "Cash"
+
+
+def test_import_customers_csv_xero_contacts_export(db):
+    """Matches the real Xero contacts export layout: Email Address, SMS
+    Phone Number, First Name, Last Name, Address, Company Name, Phone
+    Number, Secondary email."""
+    csv_text = (
+        "Email Address,SMS Phone Number,First Name,Last Name,Address,Company Name,Phone Number,Secondary email\n"
+        "a.milne63@outlook.com,07970668442,Andy,Milne,,A M Developments,07970668442,\n"
+        "alan@example.com,07932977404,Alan,Weinde,\"1 High St, Leicester\",,,alan2@example.com\n"
+    )
+    result = crud.import_customers_csv(db, csv_text)
+    db.commit()
+    assert result["created"] == 2
+
+    am = db.query(crud.models.Customer).filter_by(display_name="A M Developments").one()
+    assert am.customer_type == "Commercial"
+    assert am.contact_name == "Andy Milne"
+    assert am.mobile == "07970668442"
+    assert am.telephone == "07970668442"
+    assert am.email == "a.milne63@outlook.com"
+
+    alan = db.query(crud.models.Customer).filter_by(display_name="Alan Weinde").one()
+    assert alan.customer_type == "Private"
+    assert alan.address_1 == "1 High St, Leicester"
+    assert "alan2@example.com" in alan.notes
+
+
+def test_import_customers_csv_skips_existing_customers(db):
+    csv_text = "Company Name,Email Address\nRepeat Co,a@b.example\n"
+    assert crud.import_customers_csv(db, csv_text)["created"] == 1
+    db.commit()
+    again = crud.import_customers_csv(db, csv_text.replace("Repeat Co", "repeat co"))
+    assert again["created"] == 0
+    assert again["duplicates"] == 1
