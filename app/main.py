@@ -399,10 +399,20 @@ async def customers_import_submit(request: Request, file: UploadFile = File(...)
     if isinstance(user, RedirectResponse):
         return user
     raw = await file.read()
-    try:
-        csv_text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        csv_text = raw.decode("latin-1")
+    if raw[:2] == b"PK":  # .xlsx files are zip archives
+        try:
+            csv_text = crud.xlsx_to_csv_text(raw)
+        except Exception:
+            return templates.TemplateResponse(request, "customers_import.html", {
+                "user": user, "active": "customers",
+                "result": {"created": 0, "skipped": 0, "duplicates": 0,
+                           "errors": ["Couldn't read that Excel file — is it a genuine .xlsx workbook?"]},
+            })
+    else:
+        try:
+            csv_text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            csv_text = raw.decode("latin-1")
     result = crud.import_customers_csv(db, csv_text)
     return templates.TemplateResponse(request, "customers_import.html", {
         "user": user, "active": "customers", "result": result,

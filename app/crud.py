@@ -269,6 +269,33 @@ def deactivate_supplier(db: Session, supplier_id: int) -> None:
         db.flush()
 
 
+def xlsx_to_csv_text(raw: bytes) -> str:
+    """Flattens the first sheet of an .xlsx workbook (e.g. a Xero contacts
+    export) into CSV text so it can go through the same importer. Whole
+    numbers stored as numeric cells come through without a trailing .0
+    (the importer restores a dropped leading 0 on phone numbers)."""
+    import csv
+    import io as _io
+    from openpyxl import load_workbook
+
+    wb = load_workbook(_io.BytesIO(raw), read_only=True, data_only=True)
+    ws = wb.worksheets[0]
+    out = _io.StringIO()
+    writer = csv.writer(out)
+    for row in ws.iter_rows(values_only=True):
+        cells = []
+        for v in row:
+            if v is None:
+                cells.append("")
+            elif isinstance(v, float) and v.is_integer():
+                cells.append(str(int(v)))
+            else:
+                cells.append(str(v))
+        writer.writerow(cells)
+    wb.close()
+    return out.getvalue()
+
+
 def import_customers_csv(db: Session, csv_text: str) -> dict:
     """Bulk-loads customers from a CSV export (e.g. from the old system or
     Xero). Recognises common header spellings case-insensitively; any column
@@ -317,6 +344,10 @@ def import_customers_csv(db: Session, csv_text: str) -> dict:
             target = field_map.get(header)
             if target:
                 values[target] = (raw or "").strip()
+        for phone_key in ("telephone", "mobile"):
+            digits = values.get(phone_key, "")
+            if digits.isdigit() and len(digits) == 10:  # Excel dropped a UK leading 0
+                values[phone_key] = "0" + digits
         person_name = " ".join(p for p in (values.get("first_name", ""), values.get("last_name", "")) if p)
         display_name = values.get("display_name", "")
         derived_from_person = False

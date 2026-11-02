@@ -351,3 +351,22 @@ def test_import_customers_csv_skips_existing_customers(db):
     again = crud.import_customers_csv(db, csv_text.replace("Repeat Co", "repeat co"))
     assert again["created"] == 0
     assert again["duplicates"] == 1
+
+
+def test_xlsx_to_csv_text_feeds_the_importer(db):
+    import io
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Email Address", "SMS Phone Number", "First Name", "Last Name", "Address", "Company Name", "Phone Number", "Secondary email"])
+    ws.append(["a.milne63@outlook.com", 7970668442, "Andy", "Milne", None, "A M Developments", "07970668442", None])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    result = crud.import_customers_csv(db, crud.xlsx_to_csv_text(buf.getvalue()))
+    db.commit()
+    assert result["created"] == 1
+    c = db.query(crud.models.Customer).filter_by(display_name="A M Developments").one()
+    assert c.contact_name == "Andy Milne"
+    assert c.telephone == "07970668442"
+    assert c.mobile == "07970668442"  # numeric cell lost its leading 0 in Excel
