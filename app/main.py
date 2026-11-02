@@ -323,17 +323,29 @@ def dashboard_live(request: Request, db: Session = Depends(db_dependency)):
 
 
 @app.get("/customers", response_class=HTMLResponse)
-def customers_page(request: Request, db: Session = Depends(db_dependency)):
+def customers_page(request: Request, q: str = "", page: int = 1, partial: int = 0,
+                   db: Session = Depends(db_dependency)):
+    """Searchable, paged customer list — only one page of customers is ever
+    loaded, however big the customer base gets. `partial=1` returns just the
+    results block, which the page's search box swaps in as you type."""
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
-    customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
-    impacts = {c.customer_id: crud.customer_delete_impact(db, c.customer_id) for c in customers}
-    return templates.TemplateResponse(request, "customers.html", {
-        "user": user, "active": "customers", "customers": customers, "impacts": impacts,
+    requested = max(1, page)
+    customers, total = crud.search_customers(db, q, requested)
+    pages = max(1, -(-total // crud.CUSTOMERS_PER_PAGE))
+    page = min(requested, pages)
+    if page != requested:  # asked for a page past the end — show the last one
+        customers, total = crud.search_customers(db, q, page)
+    context = {
+        "user": user, "active": "customers", "customers": customers, "total": total,
+        "q": q, "page": page, "pages": pages, "per_page": crud.CUSTOMERS_PER_PAGE,
+        "impacts": crud.customer_delete_impacts(db, [c.customer_id for c in customers]),
         "payment_terms_options": crud.payment_terms_options(db),
         "customer_group_options": crud.customer_group_options(db),
-    })
+    }
+    template = "customers_results.html" if partial else "customers.html"
+    return templates.TemplateResponse(request, template, context)
 
 
 @app.post("/customers/{customer_id}/delete")

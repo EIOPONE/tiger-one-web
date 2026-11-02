@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from datetime import time as dt_time
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import models
@@ -406,6 +406,50 @@ def save_customer(db: Session, values: dict, customer_id: int | None = None, syn
     if is_new and sync_xero:
         sync_customer_to_xero(db, customer, XERO_CLIENT_ID, XERO_CLIENT_SECRET)
     return customer
+
+
+CUSTOMERS_PER_PAGE = 25
+
+
+def search_customers(db: Session, query: str = "", page: int = 1, per_page: int = CUSTOMERS_PER_PAGE):
+    """One page of active customers, optionally filtered by a search term
+    matched against name, contact, email, phones, town, postcode and group
+    — so the Customers page never has to load the whole list. Returns
+    (customers, total_matching)."""
+    stmt = select(models.Customer).where(models.Customer.active.is_(True))
+    term = (query or "").strip().lower()
+    if term:
+        like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        cols = (models.Customer.display_name, models.Customer.contact_name, models.Customer.email,
+                models.Customer.mobile, models.Customer.telephone, models.Customer.town,
+                models.Customer.postcode, models.Customer.customer_group)
+        stmt = stmt.where(or_(*[func.lower(c).like(like, escape="\\") for c in cols]))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    page = max(1, page)
+    rows = list(db.scalars(
+        stmt.order_by(func.lower(models.Customer.display_name))
+        .limit(per_page).offset((page - 1) * per_page)
+    ))
+    return rows, total
+
+
+def customer_delete_impacts(db: Session, customer_ids: list[int]) -> dict:
+    """customer_delete_impact for many customers in two queries total
+    (not two per customer)."""
+    impacts = {cid: {"quote_count": 0, "order_count": 0} for cid in customer_ids}
+    if not customer_ids:
+        return impacts
+    for cid, n in db.execute(
+        select(models.Quote.customer_id, func.count()).where(models.Quote.customer_id.in_(customer_ids))
+        .group_by(models.Quote.customer_id)
+    ):
+        impacts[cid]["quote_count"] = n
+    for cid, n in db.execute(
+        select(models.Order.customer_id, func.count()).where(models.Order.customer_id.in_(customer_ids))
+        .group_by(models.Order.customer_id)
+    ):
+        impacts[cid]["order_count"] = n
+    return impacts
 
 
 def customer_delete_impact(db: Session, customer_id: int) -> dict:

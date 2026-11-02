@@ -1,0 +1,98 @@
+{% if customers %}
+  <table>
+    <tr><th>Name</th><th>Type</th><th>Contact</th><th>Mobile</th><th>Terms</th><th>Group</th><th></th></tr>
+    {% for c in customers %}
+    {% set impact = impacts.get(c.customer_id, {'quote_count': 0, 'order_count': 0}) %}
+    <tr>
+      <td>{{ c.display_name }}</td>
+      <td>{{ c.customer_type }}</td>
+      <td>{{ c.contact_name }}</td>
+      <td>{{ c.mobile }}</td>
+      <td>{{ c.payment_terms }}</td>
+      <td>{{ c.customer_group }}</td>
+      <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-customer-{{ c.customer_id }}')">Edit</button>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/customers/{{ c.customer_id }}/delete" onsubmit="return confirm('Permanently delete {{ c.display_name }}?{{ ' This will also delete ' ~ impact.quote_count ~ ' quote(s) and ' ~ impact.order_count ~ ' order(s) for this customer.' if (impact.quote_count + impact.order_count) > 0 else '' }} This cannot be undone.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-customer-{{ c.customer_id }}">
+      <td colspan="7">
+        <div class="card-inline">
+          <form method="post" action="/customers/{{ c.customer_id }}/edit">
+            <div class="grid-2">
+              <div>
+                <label>Type</label>
+                <select name="customer_type">
+                  <option value="Commercial" {% if c.customer_type == 'Commercial' %}selected{% endif %}>Commercial</option>
+                  <option value="Private" {% if c.customer_type == 'Private' %}selected{% endif %}>Private</option>
+                </select>
+              </div>
+              <div><label>Name</label><input type="text" name="display_name" required value="{{ c.display_name }}"></div>
+            </div>
+            <div class="grid-2">
+              <div><label>Contact name</label><input type="text" name="contact_name" value="{{ c.contact_name }}"></div>
+              <div><label>Telephone</label><input type="text" name="telephone" value="{{ c.telephone }}"></div>
+            </div>
+            <div class="grid-2">
+              <div><label>Mobile</label><input type="text" name="mobile" value="{{ c.mobile }}"></div>
+              <div><label>Email</label><input type="text" name="email" value="{{ c.email }}"></div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label>Payment terms</label>
+                <select name="payment_terms">
+                  <option value="">— none set —</option>
+                  {% for opt in payment_terms_options %}
+                  <option value="{{ opt.name }}" {% if c.payment_terms == opt.name %}selected{% endif %}>{{ opt.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label>Customer group</label>
+                <select name="customer_group">
+                  <option value="">— none set —</option>
+                  {% for opt in customer_group_options %}
+                  <option value="{{ opt.name }}" {% if c.customer_group == opt.name %}selected{% endif %}>{{ opt.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div><label>Address line 1</label><input type="text" name="address_1" value="{{ c.address_1 }}"></div>
+              <div><label>Address line 2</label><input type="text" name="address_2" value="{{ c.address_2 }}"></div>
+            </div>
+            <div class="grid-2">
+              <div><label>Town</label><input type="text" name="town" value="{{ c.town }}"></div>
+              <div><label>Postcode</label><input type="text" name="postcode" value="{{ c.postcode }}"></div>
+            </div>
+            <label>Notes</label>
+            <input type="text" name="notes" value="{{ c.notes }}">
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-customer-{{ c.customer_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px;color:var(--muted);">
+    <span>Showing {{ (page - 1) * per_page + 1 }}–{{ (page - 1) * per_page + customers|length }} of {{ total }}</span>
+    {% if pages > 1 %}
+    <span style="display:flex;gap:8px;align-items:center;">
+      {% if page > 1 %}<a class="btn btn-outline btn-small" data-page="{{ page - 1 }}" href="/customers?q={{ q|urlencode }}&page={{ page - 1 }}">‹ Previous</a>{% endif %}
+      Page {{ page }} of {{ pages }}
+      {% if page < pages %}<a class="btn btn-outline btn-small" data-page="{{ page + 1 }}" href="/customers?q={{ q|urlencode }}&page={{ page + 1 }}">Next ›</a>{% endif %}
+    </span>
+    {% endif %}
+  </div>
+  {% elif q %}
+  <div class="empty">No customers match “{{ q }}”.</div>
+  {% else %}
+  <div class="empty">No customers yet — add the first one above.</div>
+  {% endif %}
