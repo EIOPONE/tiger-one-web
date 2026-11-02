@@ -1,0 +1,11 @@
+{# Showing x–y of n + Previous/Next. Needs: shown, total, page, pages, per_page, q, status, list_url #}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px;color:var(--muted);">
+  <span>Showing {{ (page - 1) * per_page + 1 }}–{{ (page - 1) * per_page + shown }} of {{ total }}</span>
+  {% if pages > 1 %}
+  <span style="display:flex;gap:8px;align-items:center;">
+    {% if page > 1 %}<a class="btn btn-outline btn-small" data-page="{{ page - 1 }}" href="{{ list_url }}?q={{ q|urlencode }}&status={{ status|urlencode }}&page={{ page - 1 }}">‹ Previous</a>{% endif %}
+    Page {{ page }} of {{ pages }}
+    {% if page < pages %}<a class="btn btn-outline btn-small" data-page="{{ page + 1 }}" href="{{ list_url }}?q={{ q|urlencode }}&status={{ status|urlencode }}&page={{ page + 1 }}">Next ›</a>{% endif %}
+  </span>
+  {% endif %}
+</div>

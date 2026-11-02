@@ -608,16 +608,21 @@ async def products_edit(request: Request, product_id: int, db: Session = Depends
 
 
 @app.get("/quotes", response_class=HTMLResponse)
-def quotes_page(request: Request, db: Session = Depends(db_dependency)):
+def quotes_page(request: Request, q: str = "", status: str = "", page: int = 1, partial: int = 0,
+                db: Session = Depends(db_dependency)):
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
-    quotes = db.query(models.Quote).order_by(models.Quote.created_at.desc()).all()
-    customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
-    return templates.TemplateResponse(request, "quotes.html", {
-        "user": user, "active": "quotes", "quotes": quotes, "customers": customers,
-        "products_json": products_json(db),
-    })
+    quotes, total, page, pages = _paged(crud.search_quotes, db, q, status, page)
+    context = {
+        "user": user, "active": "quotes", "quotes": quotes, "total": total, "q": q, "status": status,
+        "page": page, "pages": pages, "per_page": crud.CUSTOMERS_PER_PAGE,
+        "statuses": ["Draft", "Issued", "Accepted", "Lost", "Cancelled"],
+    }
+    if partial:
+        return templates.TemplateResponse(request, "quotes_results.html", context)
+    context["products_json"] = products_json(db)
+    return templates.TemplateResponse(request, "quotes.html", context)
 
 
 @app.post("/quotes/new")
@@ -896,18 +901,49 @@ def driver_jobs_snapshot(request: Request, db: Session = Depends(db_dependency))
     return {"delivery_ids": crud.active_delivery_ids_for_driver(db, user.user_id)}
 
 
+def _paged(search_fn, db, q, status, page):
+    requested = max(1, page)
+    rows, total = search_fn(db, q, status, requested)
+    pages = max(1, -(-total // crud.CUSTOMERS_PER_PAGE))
+    page = min(requested, pages)
+    if page != requested:  # asked for a page past the end — show the last one
+        rows, total = search_fn(db, q, status, page)
+    return rows, total, page, pages
+
+
+@app.get("/api/customers/search")
+def customers_search_api(request: Request, q: str = "", db: Session = Depends(db_dependency)):
+    """Type-to-search customer picker used on the new quote / new order
+    forms — returns at most 20 matches instead of loading everyone."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return JSONResponse({"error": "Not signed in"}, status_code=401)
+    rows, total = crud.search_customers(db, q, 1, 20)
+    return {"results": [
+        {"id": c.customer_id, "name": c.display_name,
+         "detail": " · ".join(x for x in (c.contact_name, c.town or c.postcode) if x)}
+        for c in rows], "total": total}
+
+
 @app.get("/orders", response_class=HTMLResponse)
-def orders_page(request: Request, db: Session = Depends(db_dependency)):
+def orders_page(request: Request, q: str = "", status: str = "", page: int = 1, partial: int = 0,
+                db: Session = Depends(db_dependency)):
+    """Searchable, filterable, paged order list; partial=1 returns just the
+    results block for the live search box to swap in."""
     user = require_office_user(request, db)
     if isinstance(user, RedirectResponse):
         return user
-    orders = db.query(models.Order).order_by(models.Order.created_at.desc()).all()
-    customers = db.query(models.Customer).filter(models.Customer.active.is_(True)).order_by(models.Customer.display_name).all()
-    return templates.TemplateResponse(request, "orders.html", {
-        "user": user, "active": "orders", "orders": orders, "customers": customers,
-        "products_json": products_json(db), "drivers": crud.list_drivers(db),
-        "vehicles": crud.list_vehicles(db),
-    })
+    orders, total, page, pages = _paged(crud.search_orders, db, q, status, page)
+    context = {
+        "user": user, "active": "orders", "orders": orders, "total": total, "q": q, "status": status,
+        "page": page, "pages": pages, "per_page": crud.CUSTOMERS_PER_PAGE,
+        "statuses": ["Draft", "Confirmed", "Completed", "Cancelled"],
+        "drivers": crud.list_drivers(db), "vehicles": crud.list_vehicles(db),
+    }
+    if partial:
+        return templates.TemplateResponse(request, "orders_results.html", context)
+    context["products_json"] = products_json(db)
+    return templates.TemplateResponse(request, "orders.html", context)
 
 
 @app.post("/orders/new")

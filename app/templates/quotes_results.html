@@ -1,0 +1,69 @@
+  {% set list_url = '/quotes' %}
+  {% if quotes %}
+  <table>
+    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Actions</th></tr>
+    {% for q in quotes %}
+    <tr>
+      <td>{{ q.quote_number }}</td>
+      <td>{{ q.customer.display_name }}</td>
+      <td>
+        {{ q.project }}
+        {% if q.site_address %}<div class="muted" style="font-size:12px;margin-top:2px;white-space:pre-line;">📍 {{ q.site_address }}</div>{% endif %}
+      </td>
+      <td class="right">£{{ "%.2f"|format(q.total) }}</td>
+      <td><span class="pill pill-{{ q.status|lower|replace(' ', '-') }}">{{ q.status }}</span></td>
+      <td>
+        {% if q.converted_orders %}
+          <a class="btn btn-small btn-outline" href="/orders#order-{{ q.converted_orders[0].order_id }}">→ Order {{ q.converted_orders[0].order_number }}</a>
+        {% elif q.status == 'Accepted' %}
+          <form method="post" action="/quotes/{{ q.quote_id }}/allocate" class="toggle-form">
+            <input type="hidden" name="allocate" value="{{ 'false' if q.allocate_stock else 'true' }}">
+            <button class="btn btn-small {{ 'btn-primary' if q.allocate_stock else 'btn-outline' }}" type="submit">
+              {{ 'Allocated ✓' if q.allocate_stock else 'Not allocated' }}
+            </button>
+          </form>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td class="row-actions">
+        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-quote-{{ q.quote_id }}')">Edit</button>
+        {% if not q.converted_orders %}
+          {% if q.status == 'Draft' %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Issued"><button class="btn btn-outline btn-small" type="submit">Issue</button></form>{% endif %}
+          {% if q.status in ['Draft', 'Issued'] %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Accepted"><button class="btn btn-outline btn-small" type="submit">Accept</button></form>{% endif %}
+          {% if q.status in ['Draft', 'Issued', 'Accepted'] %}<form method="post" action="/quotes/{{ q.quote_id }}/status"><input type="hidden" name="status" value="Lost"><button class="btn btn-outline btn-small" type="submit">Lost</button></form>{% endif %}
+        {% endif %}
+        <a class="btn btn-outline btn-small" href="/quotes/{{ q.quote_id }}/pdf" target="_blank">PDF</a>
+        {% if user.role == 'Admin' %}
+        <form method="post" action="/quotes/{{ q.quote_id }}/delete" onsubmit="return confirm('Permanently delete quote {{ q.quote_number }}? This cannot be undone.');">
+          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    <tr class="edit-row" id="edit-quote-{{ q.quote_id }}">
+      <td colspan="7">
+        <div class="card-inline">
+          <form method="post" action="/quotes/{{ q.quote_id }}/edit-details">
+            <div class="grid-2">
+              <div><label>Project</label><input type="text" name="project" value="{{ q.project }}"></div>
+              <div><label>Site address</label><textarea name="site_address" rows="2" placeholder="Full delivery address, including postcode">{{ q.site_address }}</textarea></div>
+            </div>
+            <p class="muted" style="font-size:12px;margin:6px 0 0;">Only the project name and site address can be changed here — to change lines, items or pricing, cancel this quote and raise a new one.</p>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
+              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-quote-{{ q.quote_id }}')">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% set shown = quotes|length %}
+  {% include "list_footer.html" %}
+  {% elif q or status %}
+  <div class="empty">No quotes match your search.</div>
+  {% else %}
+  <div class="empty">No quotes yet — create the first one above.</div>
+  {% endif %}

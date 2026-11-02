@@ -1,0 +1,31 @@
+{# Search box + status filter above a paged list. Needs: q, status, statuses #}
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+  <input type="search" id="list-search" value="{{ q }}" placeholder="{{ search_hint }}" autocomplete="off" style="flex:1 1 280px;max-width:520px;">
+  <select id="list-status" style="width:auto;">
+    <option value="">All statuses</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s }}</option>{% endfor %}
+  </select>
+</div>
+<div id="list-results">
+  {% include list_results_template %}
+</div>
+<script>
+  (function () {
+    const input = document.getElementById('list-search'), statusSel = document.getElementById('list-status');
+    const box = document.getElementById('list-results');
+    let timer = null, latest = 0;
+    async function load(page) {
+      const id = ++latest;
+      const url = '{{ list_url }}?partial=1&q=' + encodeURIComponent(input.value) + '&status=' + encodeURIComponent(statusSel.value) + '&page=' + page;
+      const res = await fetch(url);
+      if (!res.ok || id !== latest) return;   // ignore out-of-date responses
+      box.innerHTML = await res.text();
+    }
+    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(1), 250); });
+    statusSel.addEventListener('change', () => load(1));
+    box.addEventListener('click', (e) => {
+      const a = e.target.closest('a[data-page]'); if (!a) return;
+      e.preventDefault(); load(a.dataset.page);
+    });
+  })();
+</script>

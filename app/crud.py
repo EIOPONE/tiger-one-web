@@ -433,6 +433,37 @@ def search_customers(db: Session, query: str = "", page: int = 1, per_page: int 
     return rows, total
 
 
+def _search_documents(db: Session, model, number_col, query: str, status: str, page: int,
+                      per_page: int = CUSTOMERS_PER_PAGE):
+    """Shared by the quote and order lists: filter by status and a free-text
+    term (number, customer, project, site address), newest first, one page
+    at a time. Returns (rows, total_matching)."""
+    stmt = select(model).join(models.Customer, model.customer_id == models.Customer.customer_id)
+    if status:
+        stmt = stmt.where(model.status == status)
+    term = (query or "").strip().lower()
+    if term:
+        like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        cols = [number_col, model.project, model.site_address, models.Customer.display_name]
+        if hasattr(model, "xero_invoice_number"):
+            cols.append(model.xero_invoice_number)
+        stmt = stmt.where(or_(*[func.lower(func.coalesce(c, "")).like(like, escape="\\") for c in cols]))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = list(db.scalars(
+        stmt.order_by(model.created_at.desc(), number_col.desc())
+        .limit(per_page).offset((max(1, page) - 1) * per_page)
+    ))
+    return rows, total
+
+
+def search_orders(db: Session, query: str = "", status: str = "", page: int = 1):
+    return _search_documents(db, models.Order, models.Order.order_number, query, status, page)
+
+
+def search_quotes(db: Session, query: str = "", status: str = "", page: int = 1):
+    return _search_documents(db, models.Quote, models.Quote.quote_number, query, status, page)
+
+
 def customer_delete_impacts(db: Session, customer_ids: list[int]) -> dict:
     """customer_delete_impact for many customers in two queries total
     (not two per customer)."""

@@ -8,10 +8,8 @@
   <form method="post" action="/orders/new" id="order-form">
     <div class="grid-2">
       <div>
-        <label for="customer_id">Customer</label>
-        <select id="customer_id" name="customer_id" required>
-          {% for c in customers %}<option value="{{ c.customer_id }}">{{ c.display_name }}</option>{% endfor %}
-        </select>
+        <label for="cp-input">Customer</label>
+        {% include "customer_picker.html" %}
       </div>
       <div><label for="project">Project</label><input type="text" id="project" name="project"></div>
     </div>
@@ -45,126 +43,10 @@
 
 <div class="card">
   <h2>All orders</h2>
-  {% if orders %}
-  <table>
-    <tr><th>Number</th><th>Customer</th><th>Project</th><th class="right">Total</th><th>Status</th><th>Allocate</th><th>Xero</th><th>Driver link ↗</th><th>Actions</th></tr>
-    {% for o in orders %}
-    <tr id="order-{{ o.order_id }}">
-      <td>
-        {{ o.order_number }}
-        {% if o.source_quote %}<div class="muted" style="font-size:11px;">from {{ o.source_quote.quote_number }}</div>{% endif %}
-      </td>
-      <td>{{ o.customer.display_name }}</td>
-      <td>
-        {{ o.project }}
-        {% if o.site_address %}<div class="muted" style="font-size:12px;margin-top:2px;white-space:pre-line;">📍 {{ o.site_address }}</div>{% endif %}
-      </td>
-      <td class="right">£{{ "%.2f"|format(o.total) }}</td>
-      <td><span class="pill pill-{{ o.status|lower|replace(' ', '-') }}">{{ o.status }}</span></td>
-      <td>
-        {% if o.status == 'Confirmed' %}
-          <form method="post" action="/orders/{{ o.order_id }}/allocate" class="toggle-form">
-            <input type="hidden" name="allocate" value="{{ 'false' if o.allocate_stock else 'true' }}">
-            <button class="btn btn-small {{ 'btn-primary' if o.allocate_stock else 'btn-outline' }}" type="submit">
-              {{ 'Allocated ✓' if o.allocate_stock else 'Not allocated' }}
-            </button>
-          </form>
-        {% else %}
-          <span class="muted">—</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if o.xero_invoice_number %}
-          <span class="pill pill-completed">{{ o.xero_invoice_number }}</span>
-        {% elif o.status == 'Completed' %}
-          <form method="post" action="/orders/{{ o.order_id }}/xero-retry" class="toggle-form">
-            <button class="btn btn-small btn-outline" type="submit" title="Automatic push didn't complete — click to retry">Retry sync</button>
-          </form>
-        {% else %}
-          <span class="muted">—</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if o.deliveries %}
-          {% for d in o.deliveries %}
-            <div style="margin-bottom:6px;">
-              <a href="/d/{{ d.access_token }}" target="_blank">{% if d.driver_name %}{{ d.driver_name }}{% else %}<span style="color:var(--orange-dark);font-weight:700;">Unassigned</span>{% endif %} · {{ d.vehicle or '—' }} · {{ d.status }}</a>
-              {% if d.status == 'Delivered' %}<a href="/api/deliveries/{{ d.delivery_id }}/pod.pdf" target="_blank" style="margin-left:6px;">POD PDF</a>{% endif %}
-              {% if d.status != 'Delivered' %}
-                <details style="margin-top:4px;">
-                  <summary class="muted" style="font-size:12px;cursor:pointer;">Reassign</summary>
-                  <form method="post" action="/orders/{{ o.order_id }}/deliveries/{{ d.delivery_id }}/reassign" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-                    <select name="driver_user_id" style="width:110px;">
-                      <option value="">Driver…</option>
-                      {% for dr in drivers %}<option value="{{ dr.user_id }}" {{ 'selected' if d.driver_user_id == dr.user_id }}>{{ dr.full_name }}</option>{% endfor %}
-                    </select>
-                    <select name="vehicle_id" style="width:90px;">
-                      <option value="">Vehicle…</option>
-                      {% for v in vehicles %}<option value="{{ v.vehicle_id }}" {{ 'selected' if d.vehicle_id == v.vehicle_id }}>{{ v.registration }}</option>{% endfor %}
-                    </select>
-                    <button class="btn btn-outline btn-small" type="submit">Save</button>
-                  </form>
-                  {% if d.driver_user_id %}
-                  <form method="post" action="/orders/{{ o.order_id }}/deliveries/{{ d.delivery_id }}/unassign" style="margin-top:4px;">
-                    <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Unassign driver</button>
-                  </form>
-                  {% endif %}
-                </details>
-              {% endif %}
-            </div>
-          {% endfor %}
-        {% elif o.status == 'Confirmed' %}
-          <form method="post" action="/orders/{{ o.order_id }}/deliveries" style="display:flex;gap:6px;flex-wrap:wrap;">
-            <select name="driver_user_id" style="width:110px;">
-              <option value="" selected>Driver (optional)</option>
-              {% for d in drivers %}<option value="{{ d.user_id }}">{{ d.full_name }}</option>{% endfor %}
-            </select>
-            <select name="vehicle_id" style="width:90px;">
-              <option value="" selected>Vehicle</option>
-              {% for v in vehicles %}<option value="{{ v.vehicle_id }}">{{ v.registration }}</option>{% endfor %}
-            </select>
-            <input type="date" name="scheduled_date" style="width:130px;">
-            <button class="btn btn-outline btn-small" type="submit">Schedule</button>
-          </form>
-        {% else %}
-          <span class="muted">—</span>
-        {% endif %}
-      </td>
-      <td class="row-actions">
-        <button type="button" class="btn btn-outline btn-small" onclick="toggleEditRow('edit-order-{{ o.order_id }}')">Edit</button>
-        {% if o.status == 'Draft' %}<form method="post" action="/orders/{{ o.order_id }}/status"><input type="hidden" name="status" value="Confirmed"><button class="btn btn-outline btn-small" type="submit">Confirm</button></form>{% endif %}
-        {% if o.status in ['Draft', 'Confirmed'] %}<form method="post" action="/orders/{{ o.order_id }}/status"><input type="hidden" name="status" value="Cancelled"><button class="btn btn-outline btn-small" type="submit">Cancel</button></form>{% endif %}
-        {% if o.status == 'Confirmed' %}<form method="post" action="/orders/{{ o.order_id }}/status"><input type="hidden" name="status" value="Completed"><button class="btn btn-outline btn-small" type="submit">Complete</button></form>{% endif %}
-        <a class="btn btn-outline btn-small" href="/orders/{{ o.order_id }}/pdf" target="_blank">PDF</a>
-        {% if user.role == 'Admin' %}
-        <form method="post" action="/orders/{{ o.order_id }}/delete" onsubmit="return confirm('Permanently delete order {{ o.order_number }}?{{ ' It has already been invoiced in Xero \u2014 this will NOT remove that invoice, only the Tiger One record.' if o.xero_invoice_number else '' }} This cannot be undone.');">
-          <button class="btn btn-outline btn-small" type="submit" style="color:#B42318;">Delete</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    <tr class="edit-row" id="edit-order-{{ o.order_id }}">
-      <td colspan="9">
-        <div class="card-inline">
-          <form method="post" action="/orders/{{ o.order_id }}/edit-details">
-            <div class="grid-2">
-              <div><label>Project</label><input type="text" name="project" value="{{ o.project }}"></div>
-              <div><label>Site address</label><textarea name="site_address" rows="2" placeholder="Full delivery address, including postcode">{{ o.site_address }}</textarea></div>
-            </div>
-            <p class="muted" style="font-size:12px;margin:6px 0 0;">Only the project name and site address can be changed here — to change lines, items or pricing, cancel this order and raise a new one.</p>
-            <div style="margin-top:12px;display:flex;gap:8px;">
-              <button class="btn btn-primary btn-small" type="submit">Save changes</button>
-              <button class="btn btn-outline btn-small" type="button" onclick="toggleEditRow('edit-order-{{ o.order_id }}')">Cancel</button>
-            </div>
-          </form>
-        </div>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <div class="empty">No orders yet — create the first one above.</div>
-  {% endif %}
+  {% set search_hint = 'Search order number, customer, project, address, Xero invoice…' %}
+  {% set list_url = '/orders' %}
+  {% set list_results_template = 'orders_results.html' %}
+  {% include "list_toolbar.html" %}
 </div>
 
 <script>

@@ -1,0 +1,60 @@
+{# Type-to-search customer picker — replaces a <select> of every customer. #}
+<style>
+  .cp { position: relative; }
+  .cp-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 280px; overflow-y: auto; display: none; margin-top: 4px; }
+  .cp-list.open { display: block; }
+  .cp-opt { padding: 9px 12px; cursor: pointer; font-size: 14px; }
+  .cp-opt small { display: block; color: var(--muted); font-size: 12px; }
+  .cp-opt.active, .cp-opt:hover { background: var(--soft-orange); }
+  .cp-none { padding: 10px 12px; color: var(--muted); font-size: 13px; }
+</style>
+<div class="cp" id="cp">
+  <input type="text" id="cp-input" placeholder="Start typing a customer name…" autocomplete="off" required>
+  <input type="hidden" name="customer_id" id="cp-id">
+  <div class="cp-list" id="cp-list"></div>
+</div>
+<script>
+  (function () {
+    const input = document.getElementById('cp-input'), hidden = document.getElementById('cp-id'), list = document.getElementById('cp-list');
+    let timer = null, latest = 0, active = -1, items = [];
+    const MSG = 'Pick a customer from the list';
+    input.setCustomValidity(MSG);
+
+    function close() { list.classList.remove('open'); active = -1; }
+    function choose(i) {
+      const c = items[i]; if (!c) return;
+      hidden.value = c.id; input.value = c.name; input.setCustomValidity(''); close();
+    }
+    function highlight() { [...list.children].forEach((el, i) => el.classList.toggle('active', i === active)); }
+    function render() {
+      list.innerHTML = '';
+      if (!items.length) { list.innerHTML = '<div class="cp-none">No customers match</div>'; }
+      items.forEach((c, i) => {
+        const d = document.createElement('div'); d.className = 'cp-opt';
+        d.innerHTML = '<strong></strong><small></small>';
+        d.firstChild.textContent = c.name; d.lastChild.textContent = c.detail || '';
+        d.addEventListener('mousedown', (e) => { e.preventDefault(); choose(i); });
+        list.appendChild(d);
+      });
+      list.classList.add('open'); active = items.length ? 0 : -1; highlight();
+    }
+    async function search() {
+      const id = ++latest;
+      const res = await fetch('/api/customers/search?q=' + encodeURIComponent(input.value));
+      if (!res.ok || id !== latest) return;
+      items = (await res.json()).results; render();
+    }
+    input.addEventListener('input', () => {
+      hidden.value = ''; input.setCustomValidity(MSG);   // typing again un-picks the customer
+      clearTimeout(timer); timer = setTimeout(search, 150);
+    });
+    input.addEventListener('focus', () => { if (!hidden.value) search(); });
+    input.addEventListener('blur', close);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (!list.classList.contains('open')) search(); active = Math.min(items.length - 1, active + 1); highlight(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(0, active - 1); highlight(); }
+      else if (e.key === 'Enter' && list.classList.contains('open') && active >= 0) { e.preventDefault(); choose(active); }
+      else if (e.key === 'Escape') close();
+    });
+  })();
+</script>
