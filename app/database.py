@@ -36,6 +36,8 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 # replacing with Alembic once real customer data is on there and schema
 # changes need to be safer/reversible than "add a nullable column".
 _LIGHT_MIGRATIONS = [
+    "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS start_minutes INTEGER",
+    "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 120",
     "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS driver_user_id INTEGER REFERENCES app_users(user_id)",
     "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS scheduled_date DATE",
     "ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS sequence INTEGER NOT NULL DEFAULT 0",

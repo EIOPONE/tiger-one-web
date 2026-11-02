@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Timetable — Tiger One{% endblock %}
+{% block body_class %}wide-page{% endblock %}
+{% block page_title %}Timetable{% endblock %}
+{% block page_subtitle %}Each driver's day in 15-minute blocks. Drag a job from the left into a slot (new jobs start at 2 hours), drag a job to move it, or drag its bottom edge to shorten or stretch it.{% endblock %}
+{% block page_actions %}
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap;white-space:nowrap;">
+  <button type="button" class="btn btn-outline btn-small" onclick="shiftDay(-1)">‹</button>
+  <input type="date" id="board-date" value="{{ board_date }}" onchange="goToDate(this.value)" style="width:auto;">
+  <button type="button" class="btn btn-outline btn-small" onclick="shiftDay(1)">›</button>
+  <a class="btn btn-outline btn-small" href="/kanban?board_date={{ board_date }}">📋 Board view</a>
+</div>
+{% endblock %}
+{% block content %}
+{% set row = 22 %}
+{% set slots = ((day_end - day_start) // slot) %}
+
+<style>
+  .tt-wrap { display: flex; gap: 16px; align-items: flex-start; }
+  .tt-side { flex: 0 0 230px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .tt-side.drop-hint { background: var(--soft-orange); border-color: var(--orange); }
+  .tt-side h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  .tt-side .hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  .tt-item { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; font-size: 13px; cursor: grab; touch-action: none; user-select: none; }
+  .tt-item .no { font-weight: 700; }
+  .tt-item .cust, .tt-item .site { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tt-item .tag { display: inline-block; margin-top: 6px; font-size: 11px; font-weight: 700; color: var(--orange-dark); background: #FFF0E7; border-radius: 999px; padding: 2px 8px; }
+  .tt-scroll { flex: 1; min-width: 0; overflow-x: auto; }
+  .tt-grid { display: grid; grid-template-columns: 52px repeat({{ drivers|length }}, minmax(170px, 1fr)); border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .tt-head { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 8px; font-size: 13px; font-weight: 700; text-align: center; }
+  .tt-gutter { position: relative; height: {{ slots * row }}px; border-right: 1px solid var(--line); }
+  .tt-gutter span { position: absolute; right: 6px; font-size: 11px; color: var(--muted); transform: translateY(-7px); }
+  .tcol { position: relative; height: {{ slots * row }}px; border-left: 1px solid var(--line);
+    background-image:
+      linear-gradient(to bottom, #CFD3D6 1px, transparent 1px),
+      linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+    background-size: 100% {{ 4 * row }}px, 100% {{ row }}px; }
+  .tblock { position: absolute; left: 3px; right: 3px; background: #FFF0E7; border: 1px solid var(--orange); border-left: 5px solid var(--orange); border-radius: 8px; padding: 3px 8px; font-size: 12px; overflow: hidden; cursor: grab; touch-action: none; user-select: none; z-index: 2; }
+  .tblock .no { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tblock .meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tblock .tt { font-weight: 700; color: var(--orange-dark); font-size: 11px; }
+  .tblock.dragging { opacity: .85; box-shadow: 0 6px 18px rgba(0,0,0,.22); z-index: 20; }
+  .tblock.clash { background: #FDE7E4; border-color: #B42318; border-left-color: #B42318; }
+  .tblock.done { background: #E7F3ED; border-color: #247A52; border-left-color: #247A52; cursor: default; }
+  .tblock.enroute { background: #EAF1FB; border-color: #2F6FBF; border-left-color: #2F6FBF; }
+  .tblock .rz { position: absolute; left: 0; right: 0; bottom: 0; height: 9px; cursor: ns-resize; touch-action: none; background: linear-gradient(to bottom, transparent, rgba(0,0,0,.12)); }
+  .tblock.ghost { position: fixed; z-index: 1000; pointer-events: none; }
+  .tblock.short .meta { display: none; }
+</style>
+
+<div class="tt-wrap">
+  <aside class="tt-side" id="side">
+    <h3>To schedule</h3>
+    <p class="hint">Drag into a driver's slot. Drop a placed job back here to unassign it.</p>
+    {% for o in unassigned_orders %}
+    <div class="tt-item" data-order-id="{{ o.order_id }}" data-dur="{{ default_minutes }}">
+      <div class="no">{{ o.order_number }}</div>
+      <div class="cust">{{ o.customer.display_name }}</div>
+      <div class="site">{{ o.site_address }}</div>
+    </div>
+    {% endfor %}
+    {% for d in waiting %}
+    <div class="tt-item" data-delivery-id="{{ d.delivery_id }}" data-dur="{{ d.duration_minutes }}">
+      <div class="no">{{ d.order.order_number }}</div>
+      <div class="cust">{{ d.order.customer.display_name }}</div>
+      <div class="site">{{ d.order.site_address }}</div>
+      <span class="tag">{% if d.driver_name %}{{ d.driver_name }} — needs a time{% else %}Needs driver &amp; time{% endif %}</span>
+    </div>
+    {% endfor %}
+    {% if not unassigned_orders and not waiting %}
+    <div class="hint">Nothing waiting for this day.</div>
+    {% endif %}
+  </aside>
+
+  <div class="tt-scroll">
+    {% if not drivers %}
+    <div class="empty">No drivers yet — add them on the Drivers page.</div>
+    {% else %}
+    <div class="tt-grid" id="grid">
+      <div class="tt-head">&nbsp;</div>
+      {% for d in drivers %}<div class="tt-head">{{ d.full_name }}</div>{% endfor %}
+
+      <div class="tt-gutter">
+        {% for m in range(day_start, day_end + 1, 60) %}
+        <span style="top: {{ ((m - day_start) // slot) * row + (7 if m == day_start else 0) }}px;">{{ fmt(m) }}</span>
+        {% endfor %}
+      </div>
+      {% for d in drivers %}
+      <div class="tcol" data-driver-id="{{ d.user_id }}">
+        {% for j in timed[d.user_id] %}
+        {% set locked = j.status == 'Delivered' %}
+        <div class="tblock {{ 'done' if locked }} {{ 'enroute' if j.status == 'En Route' }} {{ 'short' if j.duration_minutes <= 30 }}"
+             data-delivery-id="{{ j.delivery_id }}" data-start="{{ j.start_minutes }}" data-dur="{{ j.duration_minutes }}"
+             data-locked="{{ 1 if locked else 0 }}"
+             style="top: {{ ((j.start_minutes - day_start) // slot) * row }}px; height: {{ (j.duration_minutes // slot) * row }}px;">
+          <div class="no"><span class="tt">{{ fmt(j.start_minutes) }}–{{ fmt(j.start_minutes + j.duration_minutes) }}</span> {{ j.order.order_number }}</div>
+          <div class="meta">{{ j.order.customer.display_name }}</div>
+          <div class="meta">{{ j.order.site_address }}</div>
+          {% if not locked %}<div class="rz" title="Drag to change length"></div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  const ROW = {{ row }}, SLOT = {{ slot }}, DAY_START = {{ day_start }}, DAY_END = {{ day_end }};
+  const BOARD_DATE = '{{ board_date }}';
+  const cols = [...document.querySelectorAll('.tcol')];
+  const side = document.getElementById('side');
+
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  const pxToMin = px => DAY_START + Math.round(px / ROW) * SLOT;
+  const minToPx = m => (m - DAY_START) / SLOT * ROW;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  function goToDate(v) { if (v) location.href = '/timetable?board_date=' + v; }
+  function shiftDay(n) {
+    const d = new Date(BOARD_DATE + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    goToDate(d.toISOString().slice(0, 10));
+  }
+
+  function colAt(x) {
+    for (const c of cols) { const r = c.getBoundingClientRect(); if (x >= r.left && x < r.right) return c; }
+    return null;
+  }
+  function overlapping(col, start, dur, except) {
+    return [...col.querySelectorAll('.tblock')].some(b => {
+      if (b === except) return false;
+      const s = +b.dataset.start, d = +b.dataset.dur;
+      return start < s + d && s < start + dur;
+    });
+  }
+  function setBlock(b, start, dur) {
+    b.dataset.start = start; b.dataset.dur = dur;
+    b.style.top = minToPx(start) + 'px';
+    b.style.height = (dur / SLOT * ROW) + 'px';
+    b.classList.toggle('short', dur <= 30);
+    const tt = b.querySelector('.tt');
+    if (tt) tt.textContent = fmt(start) + '–' + fmt(start + dur);
+  }
+  function autoScroll(y) {
+    if (y > innerHeight - 70) scrollBy(0, 14); else if (y < 70) scrollBy(0, -14);
+  }
+  async function post(url, params) {
+    const res = await fetch(url, { method: 'POST', body: new URLSearchParams(params) });
+    let body = {}; try { body = await res.json(); } catch (e) {}
+    return { ok: res.ok, error: body.error || 'That didn\'t work.' };
+  }
+  function inside(el, x, y) { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; }
+
+  // --- move a placed job (to another time and/or another driver) -------------------------
+  document.querySelectorAll('.tblock[data-locked="0"]').forEach(b => {
+    b.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.rz')) return;
+      const orig = { col: b.parentElement, start: +b.dataset.start, dur: +b.dataset.dur };
+      const grabY = e.clientY - b.getBoundingClientRect().top;
+      let moved = false;
+      b.setPointerCapture(e.pointerId);
+
+      const move = (ev) => {
+        if (!moved && Math.abs(ev.clientY - e.clientY) + Math.abs(ev.clientX - e.clientX) < 6) return;
+        moved = true; b.classList.add('dragging'); autoScroll(ev.clientY);
+        const col = colAt(ev.clientX) || b.parentElement;
+        if (col !== b.parentElement) col.appendChild(b);
+        const dur = +b.dataset.dur;
+        const start = clamp(pxToMin(ev.clientY - grabY - col.getBoundingClientRect().top), DAY_START, DAY_END - dur);
+        setBlock(b, start, dur);
+        b.classList.toggle('clash', overlapping(col, start, dur, b));
+        side.classList.toggle('drop-hint', inside(side, ev.clientX, ev.clientY));
+      };
+      const up = async (ev) => {
+        b.removeEventListener('pointermove', move);
+        b.removeEventListener('pointerup', up);
+        b.removeEventListener('pointercancel', up);
+        b.classList.remove('dragging'); side.classList.remove('drop-hint');
+        if (!moved) return;
+        const revert = () => { orig.col.appendChild(b); setBlock(b, orig.start, orig.dur); b.classList.remove('clash'); };
+        if (inside(side, ev.clientX, ev.clientY)) {
+          const r = await post('/kanban/unassign', { delivery_id: b.dataset.deliveryId });
+          if (r.ok) location.reload(); else { alert(r.error); revert(); }
+          return;
+        }
+        const col = b.parentElement, start = +b.dataset.start;
+        if (b.classList.contains('clash')) { revert(); return; }
+        if (col === orig.col && start === orig.start) return;
+        const r = await post('/timetable/place', {
+          delivery_id: b.dataset.deliveryId, driver_id: col.dataset.driverId,
+          start_minutes: start, duration_minutes: orig.dur,
+        });
+        if (!r.ok) { alert(r.error); revert(); }
+      };
+      b.addEventListener('pointermove', move);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+    });
+
+    // --- stretch / shorten by dragging the bottom edge --------------------------------
+    const rz = b.querySelector('.rz');
+    if (!rz) return;
+    rz.addEventListener('pointerdown', (e) => {
+      e.stopPropagation(); e.preventDefault();
+      rz.setPointerCapture(e.pointerId);
+      const col = b.parentElement, start = +b.dataset.start, origDur = +b.dataset.dur;
+      // can't grow into the next job, or past the end of the day
+      let limit = DAY_END;
+      col.querySelectorAll('.tblock').forEach(o => {
+        const s = +o.dataset.start;
+        if (o !== b && s >= start + SLOT && s < limit) limit = s;
+      });
+      const move = (ev) => {
+        autoScroll(ev.clientY);
+        const end = pxToMin(ev.clientY - col.getBoundingClientRect().top);
+        setBlock(b, start, clamp(end - start, SLOT, limit - start));
+      };
+      const up = async () => {
+        rz.removeEventListener('pointermove', move);
+        rz.removeEventListener('pointerup', up);
+        rz.removeEventListener('pointercancel', up);
+        const dur = +b.dataset.dur;
+        if (dur === origDur) return;
+        const r = await post('/timetable/place', {
+          delivery_id: b.dataset.deliveryId, driver_id: col.dataset.driverId,
+          start_minutes: start, duration_minutes: dur,
+        });
+        if (!r.ok) { alert(r.error); setBlock(b, start, origDur); }
+      };
+      rz.addEventListener('pointermove', move);
+      rz.addEventListener('pointerup', up);
+      rz.addEventListener('pointercancel', up);
+    });
+  });
+
+  // --- drag a waiting job from the left panel into a slot ----------------------------------
+  document.querySelectorAll('.tt-item').forEach(item => {
+    item.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      item.setPointerCapture(e.pointerId);
+      const dur = +item.dataset.dur || 120;
+      const ghost = document.createElement('div');
+      ghost.className = 'tblock ghost';
+      ghost.style.height = (dur / SLOT * ROW) + 'px';
+      ghost.style.width = '160px';
+      ghost.innerHTML = '<div class="no"><span class="tt"></span> ' + item.querySelector('.no').textContent + '</div>';
+      let started = false, target = null;
+
+      const move = (ev) => {
+        if (!started && Math.abs(ev.clientY - e.clientY) + Math.abs(ev.clientX - e.clientX) < 6) return;
+        if (!started) { started = true; document.body.appendChild(ghost); }
+        autoScroll(ev.clientY);
+        const col = colAt(ev.clientX);
+        const tt = ghost.querySelector('.tt');
+        if (!col) {
+          target = null;
+          ghost.classList.remove('clash'); tt.textContent = '';
+          ghost.style.left = (ev.clientX + 8) + 'px'; ghost.style.top = (ev.clientY + 8) + 'px';
+          return;
+        }
+        const cr = col.getBoundingClientRect();
+        const start = clamp(pxToMin(ev.clientY - 10 - cr.top), DAY_START, DAY_END - dur);
+        const clash = overlapping(col, start, dur, null);
+        target = { col, start, clash };
+        ghost.style.width = (cr.width - 6) + 'px';
+        ghost.style.left = (cr.left + 3) + 'px';
+        ghost.style.top = (cr.top + minToPx(start)) + 'px';
+        ghost.classList.toggle('clash', clash);
+        tt.textContent = fmt(start) + '–' + fmt(start + dur);
+      };
+      const up = async () => {
+        item.removeEventListener('pointermove', move);
+        item.removeEventListener('pointerup', up);
+        item.removeEventListener('pointercancel', up);
+        ghost.remove();
+        if (!started || !target || target.clash) return;
+        const params = {
+          driver_id: target.col.dataset.driverId, start_minutes: target.start,
+          duration_minutes: dur, board_date: BOARD_DATE,
+        };
+        if (item.dataset.orderId) params.order_id = item.dataset.orderId;
+        else params.delivery_id = item.dataset.deliveryId;
+        const r = await post('/timetable/place', params);
+        if (r.ok) location.reload(); else alert(r.error);
+      };
+      item.addEventListener('pointermove', move);
+      item.addEventListener('pointerup', up);
+      item.addEventListener('pointercancel', up);
+    });
+  });
+
+  // Open scrolled to the start of the working day's busy part (8am is the top; nothing to do),
+  // or to the first job if there is one far down.
+  (function () {
+    const first = document.querySelector('.tblock');
+    if (first && first.offsetTop > 500) first.scrollIntoView({ block: 'center' });
+  })();
+</script>
+{% endblock %}

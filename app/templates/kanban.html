@@ -6,6 +6,7 @@
 {% block page_actions %}
 <form method="get" action="/kanban" style="display:flex;gap:8px;align-items:center;">
   <input type="date" name="board_date" value="{{ board_date }}" onchange="this.form.submit()">
+  <a class="btn btn-outline btn-small" href="/timetable?board_date={{ board_date }}">📅 Timetable view</a>
 </form>
 {% endblock %}
 {% block content %}

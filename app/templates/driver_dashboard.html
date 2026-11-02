@@ -92,7 +92,7 @@
       <div class="job">
         <div class="top">
           <div>
-            <div class="order-no">{{ j.order.order_number }}{% if j.scheduled_date %} · {{ j.scheduled_date.strftime('%a %d %b') }}{% endif %}</div>
+            <div class="order-no">{{ j.order.order_number }}{% if j.scheduled_date %} · {{ j.scheduled_date.strftime('%a %d %b') }}{% endif %}{% if j.start_minutes is not none %} · {{ '%02d:%02d' % (j.start_minutes // 60, j.start_minutes % 60) }}–{{ '%02d:%02d' % ((j.start_minutes + j.duration_minutes) // 60, (j.start_minutes + j.duration_minutes) % 60) }}{% endif %}</div>
             <div class="project">{{ j.order.project or j.order.customer.display_name }}</div>
             <div class="customer">{{ j.order.customer.display_name }}</div>
             {% if j.order.site_address %}<div class="address">📍 {{ j.order.site_address }}</div>{% endif %}

@@ -164,6 +164,19 @@ developer.xero.com), and `XERO_REDIRECT_URI` (must be exactly
 `https://<your-render-url>/xero/callback`, entered letter-for-letter in
 the Xero app's settings too).
 
+## Timetable (15-minute day view)
+
+**Job Board → 📅 Timetable view** (or `/timetable`) shows each driver's day from
+08:00 to 20:00 in 15-minute blocks, alongside the existing kanban board
+(which stays as it was). Drag a job from the "To schedule" panel into a
+driver's slot (new jobs default to 2 hours), drag it to move it to another
+time or driver, or drag its bottom edge to shorten/stretch it in 15-minute
+steps. A driver can't be double-booked: an overlapping drop shows red and
+snaps back. Dropping a job back on the left panel unassigns it. The driver's
+own job list follows the timetable order and shows each job's time window.
+Works with touch as well as a mouse. Needs two new `deliveries` columns
+(`start_minutes`, `duration_minutes`), added automatically on deploy.
+
 ## Push notifications (driver job alerts)
 
 A driver can tap "🔔 Enable job alerts" on their jobs page (`/driver`) to

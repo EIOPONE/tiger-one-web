@@ -347,6 +347,11 @@ class Delivery(Base):
     # driver's own job list follow the office's priority order, not just
     # whatever order jobs happened to be created in.
     sequence = Column(Integer, nullable=False, default=0)
+    # Timetable slot on the day: minutes after midnight the job starts
+    # (e.g. 540 = 09:00; NULL = assigned/scheduled but not given a time
+    # yet) and how long it's booked for, in 15-minute blocks.
+    start_minutes = Column(Integer, nullable=True)
+    duration_minutes = Column(Integer, nullable=False, default=120)
     status = Column(String, nullable=False, default="Scheduled")
     # Cached ETA, refreshed on the same 30s cycle as the Traccar position
     # sync — computed there, not on every dashboard page load, to avoid

@@ -777,6 +777,57 @@ def kanban_reorder(request: Request, delivery_ids: str = Form(...), db: Session 
     return {"ok": True}
 
 
+@app.get("/timetable", response_class=HTMLResponse)
+def timetable_page(request: Request, board_date: str = "", db: Session = Depends(db_dependency)):
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    board_date = board_date or date.today().isoformat()
+    drivers = crud.list_drivers(db)
+    unassigned_orders = crud.unscheduled_confirmed_orders(db, board_date)
+    deliveries = crud.deliveries_for_date(db, date.fromisoformat(board_date))
+    timed: dict = {d.user_id: [] for d in drivers}
+    waiting = []  # scheduled for the day but not yet given a driver and/or a time
+    for delivery in deliveries:
+        if delivery.driver_user_id in timed and delivery.start_minutes is not None:
+            timed[delivery.driver_user_id].append(delivery)
+        else:
+            waiting.append(delivery)
+    return templates.TemplateResponse(request, "timetable.html", {
+        "user": user, "active": "kanban", "board_date": board_date,
+        "drivers": drivers, "unassigned_orders": unassigned_orders,
+        "waiting": waiting, "timed": timed,
+        "day_start": crud.TIMETABLE_START_MIN, "day_end": crud.TIMETABLE_END_MIN,
+        "slot": crud.TIMETABLE_SLOT_MIN, "default_minutes": crud.DEFAULT_JOB_MINUTES,
+        "fmt": crud.fmt_minutes,
+    })
+
+
+@app.post("/timetable/place")
+def timetable_place(request: Request, driver_id: int = Form(...), start_minutes: int = Form(...),
+                    duration_minutes: int = Form(0), delivery_id: int = Form(0), order_id: int = Form(0),
+                    board_date: str = Form(""), db: Session = Depends(db_dependency)):
+    """Drop an existing job (delivery_id) or a not-yet-scheduled order
+    (order_id) into a driver's slot, or move/resize one already there.
+    Overlapping the same driver's other jobs is refused."""
+    user = require_office_user(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        if delivery_id:
+            delivery = crud.place_delivery(db, delivery_id, driver_id, start_minutes, duration_minutes or None)
+        elif order_id:
+            delivery = crud.schedule_order_at_slot(
+                db, order_id, driver_id, date.fromisoformat(board_date), start_minutes,
+                duration_minutes or crud.DEFAULT_JOB_MINUTES)
+        else:
+            return JSONResponse({"ok": False, "error": "Nothing to place"}, status_code=400)
+    except ValueError as exc:
+        db.rollback()
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True, "delivery_id": delivery.delivery_id}
+
+
 @app.get("/api/driver/jobs-snapshot")
 def driver_jobs_snapshot(request: Request, db: Session = Depends(db_dependency)):
     """Polled by the driver's own dashboard to notice its job list has

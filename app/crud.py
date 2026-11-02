@@ -1044,6 +1044,8 @@ def reassign_delivery(
         raise ValueError("Can't reassign a delivery that's already been signed off")
     if driver_user_id:
         driver = db.get(models.AppUser, driver_user_id)
+        if delivery.driver_user_id != driver_user_id:
+            delivery.start_minutes = None  # a time slot belongs to one driver's day
         delivery.driver_user_id = driver_user_id
         delivery.driver_name = driver.full_name if driver else ""
         # Lands at the end of the new driver's day by default — same
@@ -1080,6 +1082,7 @@ def unassign_delivery(db: Session, delivery_id: int) -> models.Delivery:
         raise ValueError("Can't unassign a delivery that's already been signed off")
     delivery.driver_user_id = None
     delivery.driver_name = ""
+    delivery.start_minutes = None
     db.flush()
     return delivery
 
@@ -1109,6 +1112,91 @@ def deliveries_for_date(db: Session, for_date) -> list[models.Delivery]:
         .where(models.Delivery.scheduled_date == for_date, models.Delivery.status != "Cancelled")
         .order_by(models.Delivery.delivery_id)
     ))
+
+
+# --- timetable (15-minute appointment-style day view) -----------------------------------
+
+TIMETABLE_START_MIN = 8 * 60    # 08:00
+TIMETABLE_END_MIN = 20 * 60     # 20:00
+TIMETABLE_SLOT_MIN = 15
+DEFAULT_JOB_MINUTES = 120
+
+
+def fmt_minutes(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _validate_slot(db: Session, driver_user_id: int, for_date, start: int, duration: int,
+                   exclude_delivery_id: int | None = None) -> None:
+    if start % TIMETABLE_SLOT_MIN or duration % TIMETABLE_SLOT_MIN or duration < TIMETABLE_SLOT_MIN:
+        raise ValueError("Jobs go in 15-minute blocks")
+    if start < TIMETABLE_START_MIN or start + duration > TIMETABLE_END_MIN:
+        raise ValueError(f"That's outside the {fmt_minutes(TIMETABLE_START_MIN)}-{fmt_minutes(TIMETABLE_END_MIN)} timetable")
+    query = select(models.Delivery).where(
+        models.Delivery.driver_user_id == driver_user_id,
+        models.Delivery.scheduled_date == for_date,
+        models.Delivery.status != "Cancelled",
+        models.Delivery.start_minutes.is_not(None),
+    )
+    if exclude_delivery_id:
+        query = query.where(models.Delivery.delivery_id != exclude_delivery_id)
+    for other in db.scalars(query):
+        if start < other.start_minutes + other.duration_minutes and other.start_minutes < start + duration:
+            raise ValueError(
+                f"Clashes with {other.order.order_number} "
+                f"({fmt_minutes(other.start_minutes)}-{fmt_minutes(other.start_minutes + other.duration_minutes)})"
+            )
+
+
+def _resequence_driver_day(db: Session, driver_user_id: int, for_date) -> None:
+    """Keeps the driver's own job list (ordered by sequence) in the same
+    order as their timetable: timed jobs by start time, untimed after."""
+    rows = list(db.scalars(
+        select(models.Delivery).where(
+            models.Delivery.driver_user_id == driver_user_id,
+            models.Delivery.scheduled_date == for_date,
+            models.Delivery.status != "Cancelled",
+        )
+    ))
+    rows.sort(key=lambda d: (d.start_minutes is None, d.start_minutes or 0, d.sequence))
+    for position, row in enumerate(rows, start=1):
+        row.sequence = position
+    db.flush()
+
+
+def place_delivery(db: Session, delivery_id: int, driver_user_id: int, start_minutes: int,
+                   duration_minutes: int | None = None) -> models.Delivery:
+    """Puts an existing delivery into a driver's timetable slot (moving it
+    to that driver if needed, or just changing its time/length)."""
+    delivery = db.get(models.Delivery, delivery_id)
+    if not delivery:
+        raise ValueError("Delivery not found")
+    if delivery.status == "Delivered":
+        raise ValueError("Can't move a delivery that's already been signed off")
+    duration = duration_minutes or delivery.duration_minutes or DEFAULT_JOB_MINUTES
+    _validate_slot(db, driver_user_id, delivery.scheduled_date, start_minutes, duration, exclude_delivery_id=delivery_id)
+    previous_driver = delivery.driver_user_id
+    if previous_driver != driver_user_id:
+        reassign_delivery(db, delivery_id, driver_user_id=driver_user_id, vehicle_id=None)
+    delivery.start_minutes = start_minutes
+    delivery.duration_minutes = duration
+    db.flush()
+    _resequence_driver_day(db, driver_user_id, delivery.scheduled_date)
+    if previous_driver and previous_driver != driver_user_id:
+        _resequence_driver_day(db, previous_driver, delivery.scheduled_date)
+    return delivery
+
+
+def schedule_order_at_slot(db: Session, order_id: int, driver_user_id: int, for_date,
+                           start_minutes: int, duration_minutes: int = DEFAULT_JOB_MINUTES) -> models.Delivery:
+    """Creates the delivery for an unscheduled order straight into a slot."""
+    _validate_slot(db, driver_user_id, for_date, start_minutes, duration_minutes)
+    delivery = create_delivery(db, order_id, driver_user_id=driver_user_id, scheduled_date=for_date)
+    delivery.start_minutes = start_minutes
+    delivery.duration_minutes = duration_minutes
+    db.flush()
+    _resequence_driver_day(db, driver_user_id, for_date)
+    return delivery
 
 
 def active_delivery_ids_for_driver(db: Session, driver_user_id: int) -> list[int]:
