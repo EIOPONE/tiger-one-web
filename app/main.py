@@ -1762,6 +1762,28 @@ def driver_clock_page(token: str, request: Request, db: Session = Depends(db_dep
     })
 
 
+@app.get("/driver/clock/{token}/manifest.json")
+def kiosk_manifest(token: str, db: Session = Depends(db_dependency)):
+    """Install manifest for the base-tablet kiosk, so the installed icon opens
+    this kiosk page (not the driver login)."""
+    point = _kiosk_point_or_404(db, token)
+    url = f"/driver/clock/{token}"
+    return JSONResponse({
+        "name": f"Tiger One Clock — {point.name}",
+        "short_name": "Tiger Clock",
+        "start_url": url,
+        "scope": url,
+        "display": "standalone",
+        "orientation": "any",
+        "background_color": "#17191C",
+        "theme_color": "#17191C",
+        "icons": [
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        ],
+    }, media_type="application/manifest+json")
+
+
 @app.get("/driver/clock/{token}/states")
 def driver_clock_states(token: str, db: Session = Depends(db_dependency)):
     _kiosk_point_or_404(db, token)
