@@ -15,6 +15,7 @@
       <td>
         {% if d.active_entry %}
           <span class="pill pill-completed">On shift since {{ d.since | uk_time }}</span>
+          {% if d.driving %}<span class="pill pill-confirmed">🚛 Driving{% if d.driving.vehicle %} {{ d.driving.vehicle.registration }}{% endif %} since {{ d.driving.started_at | uk_time }}</span>{% endif %}
         {% else %}
           <span class="muted">Not clocked in</span>
         {% endif %}

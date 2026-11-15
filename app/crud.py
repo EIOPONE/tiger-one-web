@@ -1846,11 +1846,113 @@ def start_activity(
 def clock_out(db: Session, driver_user_id: int) -> models.TimeEntry | None:
     """Ends whatever the driver's currently clocked into, with nothing new
     started. Harmless no-op if nothing was open."""
+    stop_driving(db, driver_user_id)  # finishing the shift ends any driving too
     active = get_active_time_entry(db, driver_user_id)
     if active:
         active.ended_at = datetime.now(timezone.utc)
         db.flush()
     return active
+
+
+# --- driving sessions + the PIN kiosk ----------------------------------------------------
+
+KIOSK_MAX_ATTEMPTS = 5
+KIOSK_LOCK_SECONDS = 60
+_kiosk_failures: dict[int, tuple[int, float]] = {}  # driver_id -> (wrong PINs in a row, locked until)
+
+
+def verify_kiosk_pin(db: Session, driver_user_id: int, pin: str) -> models.AppUser:
+    """Checks a driver's PIN on the shared base tablet. A 4-digit PIN is
+    guessable, so 5 wrong tries in a row lock that driver out for a minute.
+    Raises ValueError (unknown driver) or PermissionError (wrong PIN / locked)."""
+    import time
+    driver = db.get(models.AppUser, driver_user_id)
+    if not driver or driver.role != "Driver" or not driver.active:
+        raise ValueError("Unknown driver")
+    failures, locked_until = _kiosk_failures.get(driver_user_id, (0, 0.0))
+    now = time.monotonic()
+    if locked_until > now:
+        raise PermissionError(f"Too many wrong PINs — try again in {int(locked_until - now) + 1} seconds")
+    if not verify_password(pin or "", driver.password_hash):
+        failures += 1
+        if failures >= KIOSK_MAX_ATTEMPTS:
+            _kiosk_failures[driver_user_id] = (0, now + KIOSK_LOCK_SECONDS)
+            raise PermissionError(f"Too many wrong PINs — try again in {KIOSK_LOCK_SECONDS} seconds")
+        _kiosk_failures[driver_user_id] = (failures, 0.0)
+        raise PermissionError("Wrong PIN — try again")
+    _kiosk_failures.pop(driver_user_id, None)
+    return driver
+
+
+def active_driving_session(db: Session, driver_user_id: int) -> models.DrivingSession | None:
+    return db.scalar(
+        select(models.DrivingSession)
+        .where(models.DrivingSession.driver_user_id == driver_user_id, models.DrivingSession.ended_at.is_(None))
+    )
+
+
+def start_driving(db: Session, driver_user_id: int, vehicle_id: int | None = None) -> models.DrivingSession:
+    """Starts a driving session — only possible while clocked in, and
+    hands the vehicle over if someone else was still marked as driving it."""
+    if not get_active_time_entry(db, driver_user_id):
+        raise ValueError("Clock in first")
+    stop_driving(db, driver_user_id)
+    now = datetime.now(timezone.utc)
+    if vehicle_id:
+        for other in db.scalars(select(models.DrivingSession).where(
+            models.DrivingSession.vehicle_id == vehicle_id, models.DrivingSession.ended_at.is_(None),
+        )):
+            other.ended_at = now
+    session = models.DrivingSession(driver_user_id=driver_user_id, vehicle_id=vehicle_id or None)
+    db.add(session)
+    db.flush()
+    return session
+
+
+def stop_driving(db: Session, driver_user_id: int) -> models.DrivingSession | None:
+    session = active_driving_session(db, driver_user_id)
+    if session:
+        session.ended_at = datetime.now(timezone.utc)
+        db.flush()
+    return session
+
+
+def driving_hours_today(db: Session, driver_user_id: int) -> float:
+    """Total tracked driving so far today (including a session still running)."""
+    day_start = datetime.combine(datetime.now(timezone.utc).date(), dt_time.min, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    total = timedelta()
+    for s in db.scalars(select(models.DrivingSession).where(
+        models.DrivingSession.driver_user_id == driver_user_id, models.DrivingSession.started_at >= day_start,
+    )):
+        started = s.started_at if s.started_at.tzinfo else s.started_at.replace(tzinfo=timezone.utc)
+        ended = s.ended_at
+        if ended is not None and not ended.tzinfo:
+            ended = ended.replace(tzinfo=timezone.utc)
+        total += (ended or now) - started
+    return round(total.total_seconds() / 3600, 2)
+
+
+def driver_kiosk_states(db: Session) -> dict:
+    """{driver_id: 'out' | 'on_shift' | 'driving'} for the kiosk name grid."""
+    states = {}
+    for d in list_drivers(db):
+        if active_driving_session(db, d.user_id):
+            states[d.user_id] = "driving"
+        elif get_active_time_entry(db, d.user_id):
+            states[d.user_id] = "on_shift"
+        else:
+            states[d.user_id] = "out"
+    return states
+
+
+def driver_tacho_hours_today(db: Session, driver_user_id: int) -> float | None:
+    """The tacho figure already saved for today, if any (used to pre-fill)."""
+    record = db.scalar(select(models.TachographRecord).where(
+        models.TachographRecord.driver_user_id == driver_user_id,
+        models.TachographRecord.record_date == datetime.now(timezone.utc).date(),
+    ))
+    return float(record.driving_hours) if record else None
 
 
 def driver_has_entered_tacho_today(db: Session, driver_user_id: int) -> bool:
@@ -1952,9 +2054,11 @@ def list_all_drivers_time_status(db: Session) -> list[dict]:
     result = []
     for driver in drivers:
         active = get_active_time_entry(db, driver.user_id)
+        driving = active_driving_session(db, driver.user_id)
         result.append({
             "driver": driver, "active_entry": active,
             "since": active.started_at if active else None,
+            "driving": driving,
         })
     return result
 

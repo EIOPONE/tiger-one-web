@@ -539,6 +539,24 @@ class TimeEntry(Base):
     )
 
 
+class DrivingSession(Base):
+    """A stretch of actual driving inside a driver's shift, started/stopped
+    by tapping name + PIN on the base tablet. Kept separate from TimeEntry
+    on purpose: the driver stays clocked in (On Shift) the whole time, so
+    the timesheet's working hours are unaffected, and driving time is
+    layered on top of it — giving both working time and driving time."""
+    __tablename__ = "driving_sessions"
+
+    session_id = Column(Integer, primary_key=True)
+    driver_user_id = Column(Integer, ForeignKey("app_users.user_id"), nullable=False)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
+    started_at = Column(DateTime, nullable=False, server_default=func.now())
+    ended_at = Column(DateTime, nullable=True)  # NULL while still driving
+
+    driver = relationship("AppUser")
+    vehicle = relationship("Vehicle")
+
+
 class TachographRecord(Base):
     """The authoritative driving-hours figure for a driver on a given day
     — entered by office staff after reading the actual tachograph

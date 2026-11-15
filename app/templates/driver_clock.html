@@ -2,119 +2,257 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Clock in — Tiger One</title>
   <style>
-    :root { --orange:#E3783E; --orange-dark:#B65321; --ink:#17191C; --line:#DFE2E4; --muted:#70757C; --surface:#F4F5F5; --green:#247A52; }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--surface); color: var(--ink); }
-    header { background: var(--ink); color: #fff; padding: 22px 20px; text-align: center; }
-    header h1 { margin: 0; font-size: 19px; }
-    header p { margin: 4px 0 0; color: #cfd2d5; font-size: 14px; }
-    main { max-width: 460px; margin: 0 auto; padding: 20px; }
-    .confirm-banner { background: #E7F3ED; border: 1px solid #BEE3CE; color: var(--green); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; font-weight: 700; font-size: 15px; text-align: center; }
-    .name-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .name-btn { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px 10px; font-size: 16px; font-weight: 700; color: var(--ink); text-align: center; cursor: pointer; position: relative; }
-    .name-btn.on-shift { border-color: var(--orange); }
-    .name-btn .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); margin-left: 6px; vertical-align: middle; }
+    :root { --orange:#E3783E; --orange-dark:#B65321; --ink:#17191C; --line:#DFE2E4; --muted:#70757C; --surface:#F4F5F5; --green:#247A52; --red:#B42318; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--surface); color: var(--ink); min-height: 100vh; }
+    header { background: var(--ink); color: #fff; padding: 20px; text-align: center; }
+    header h1 { margin: 0; font-size: 22px; }
+    header p { margin: 4px 0 0; color: #cfd2d5; font-size: 15px; }
+    main { max-width: 760px; margin: 0 auto; padding: 22px; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    .name-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+    .name-btn { background: #fff; border: 2px solid var(--line); border-radius: 16px; padding: 26px 10px; font-size: 20px; font-weight: 700; text-align: center; cursor: pointer; }
+    .name-btn small { display: block; margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+    .name-btn.on_shift { border-color: var(--orange); }
+    .name-btn.on_shift small { color: var(--orange-dark); }
+    .name-btn.driving { border-color: var(--green); background: #E7F3ED; }
+    .name-btn.driving small { color: var(--green); }
     .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
 
-    .overlay { display: none; position: fixed; inset: 0; background: rgba(23,25,28,0.6); align-items: flex-end; justify-content: center; z-index: 50; }
-    .overlay.open { display: flex; }
-    .sheet { background: #fff; width: 100%; max-width: 460px; border-radius: 20px 20px 0 0; padding: 24px 20px 28px; }
-    .sheet h2 { margin: 0 0 4px; font-size: 18px; }
-    .sheet .muted { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
-    .big-btn { width: 100%; padding: 20px; border: 0; border-radius: 14px; font-size: 17px; font-weight: 800; }
-    .start-btn { background: var(--green); color: #fff; }
-    .finish-btn { background: var(--orange); color: #fff; }
-    .cancel-btn { width: 100%; padding: 12px; border: 0; background: none; color: var(--muted); font-size: 14px; margin-top: 10px; }
-    label { display: block; font-size: 13px; color: var(--muted); margin: 4px 0 8px; font-weight: 600; }
-    input[type=number] { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 18px; text-align: center; margin-bottom: 6px; }
-    .hint { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .panel { background: #fff; border-radius: 20px; padding: 26px; max-width: 420px; margin: 0 auto; }
+    .panel h2 { margin: 0 0 4px; font-size: 24px; text-align: center; }
+    .panel .sub { margin: 0 0 18px; text-align: center; color: var(--muted); font-size: 15px; min-height: 20px; }
+    .dots { display: flex; justify-content: center; gap: 14px; margin: 6px 0 12px; min-height: 22px; }
+    .dots i { width: 18px; height: 18px; border-radius: 50%; background: var(--ink); }
+    .err { color: var(--red); text-align: center; font-weight: 700; min-height: 22px; margin-bottom: 8px; font-size: 15px; }
+    .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .pad button { padding: 20px 0; font-size: 28px; font-weight: 700; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; color: var(--ink); }
+    .pad button:active { background: #E4E6E8; }
+    .pad .ok { background: var(--green); color: #fff; border-color: var(--green); font-size: 22px; }
+    .pad .ok:disabled { opacity: .35; }
+    .cancel { display: block; width: 100%; margin-top: 14px; padding: 14px; border: 0; background: none; color: var(--muted); font-size: 16px; }
+
+    .big { display: block; width: 100%; padding: 24px; border: 0; border-radius: 16px; font-size: 21px; font-weight: 800; margin-bottom: 14px; color: #fff; }
+    .big.green { background: var(--green); }
+    .big.orange { background: var(--orange); }
+    .big.dark { background: var(--ink); }
+    .veh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+    .veh-grid button { padding: 20px 8px; font-size: 18px; font-weight: 800; border: 2px solid var(--line); background: #fff; border-radius: 14px; }
+    label { display: block; font-size: 14px; color: var(--muted); margin: 6px 0 8px; font-weight: 600; text-align: center; }
+    input[type=number] { width: 100%; padding: 16px; border: 1px solid var(--line); border-radius: 12px; font-size: 26px; text-align: center; user-select: text; -webkit-user-select: text; }
+    .hint { font-size: 13px; color: var(--muted); text-align: center; margin: 8px 0 16px; }
+
+    .done { text-align: center; padding: 60px 20px; }
+    .done .tick { font-size: 72px; }
+    .done .msg { font-size: 26px; font-weight: 800; margin-top: 10px; }
   </style>
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#17191C">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Tiger One">
   <script src="/static/register-sw.js" defer></script>
 </head>
 <body>
   <header>
     <h1>📍 {{ clock_point.name }}</h1>
-    <p>Tap your name to clock in or out</p>
+    <p id="head-sub">Tap your name</p>
   </header>
   <main>
-    {% if confirmed_driver %}
-    {% set now_active = statuses.get(confirmed_driver.user_id) %}
-    <div class="confirm-banner">
-      {% if now_active %}✅ {{ confirmed_driver.full_name }}, you're clocked in{% else %}✅ {{ confirmed_driver.full_name }}, you're clocked out — see you tomorrow{% endif %}
-    </div>
-    {% endif %}
-
-    {% if drivers %}
-    <div class="name-grid">
-      {% for d in drivers %}
-      <div class="name-btn {{ 'on-shift' if statuses.get(d.user_id) }}"
-           data-id="{{ d.user_id }}" data-name="{{ d.full_name }}"
-           data-active="{{ 'true' if statuses.get(d.user_id) else 'false' }}"
-           data-since="{{ statuses.get(d.user_id).started_at | uk_time if statuses.get(d.user_id) else '' }}">
-        {{ d.full_name }}{% if statuses.get(d.user_id) %}<span class="dot"></span>{% endif %}
+    <!-- 1. who are you -->
+    <div class="screen active" id="s-names">
+      {% if drivers %}
+      <div class="name-grid" id="name-grid">
+        {% for d in drivers %}
+        {% set st = states.get(d.user_id, 'out') %}
+        <div class="name-btn {{ st }}" data-id="{{ d.user_id }}" data-name="{{ d.full_name }}">
+          {{ d.full_name }}<small>{{ 'Driving' if st == 'driving' else ('On shift' if st == 'on_shift' else 'Not clocked in') }}</small>
+        </div>
+        {% endfor %}
       </div>
-      {% endfor %}
+      {% else %}
+      <div class="empty">No drivers set up yet — ask the office to add one.</div>
+      {% endif %}
     </div>
-    {% else %}
-    <div class="empty">No drivers set up yet — ask the office to add one.</div>
-    {% endif %}
+
+    <!-- 2. PIN -->
+    <div class="screen" id="s-pin">
+      <div class="panel">
+        <h2 id="pin-name"></h2>
+        <p class="sub">Enter your PIN</p>
+        <div class="dots" id="pin-dots"></div>
+        <div class="err" id="pin-err"></div>
+        <div class="pad" id="pad">
+          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+          <button data-k="back">⌫</button><button data-k="0">0</button><button class="ok" id="pin-ok" disabled>OK</button>
+        </div>
+        <button class="cancel" id="pin-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- 3. what do you want to do -->
+    <div class="screen" id="s-actions">
+      <div class="panel">
+        <h2 id="act-name"></h2>
+        <p class="sub" id="act-sub"></p>
+        <div id="act-buttons"></div>
+        <div class="err" id="act-err"></div>
+        <button class="cancel" id="act-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- 3b. which vehicle -->
+    <div class="screen" id="s-vehicle">
+      <div class="panel">
+        <h2>Which vehicle?</h2>
+        <p class="sub">Tap the one you're driving</p>
+        <div class="veh-grid">
+          {% for v in vehicles %}<button data-vid="{{ v.vehicle_id }}">{{ v.registration }}</button>{% endfor %}
+        </div>
+        <button class="big dark" id="veh-skip" style="margin-top:6px;">Don't know / not listed</button>
+        <button class="cancel" id="veh-back">Back</button>
+      </div>
+    </div>
+
+    <!-- 3c. clock out: tacho hours -->
+    <div class="screen" id="s-out">
+      <div class="panel">
+        <h2>Clocking out</h2>
+        <p class="sub" id="out-sub"></p>
+        <label for="out-hours">Your driving hours today (from the tacho)</label>
+        <input type="number" id="out-hours" step="0.25" min="0" max="24" inputmode="decimal">
+        <div class="hint" id="out-hint"></div>
+        <div class="err" id="out-err"></div>
+        <button class="big orange" id="out-go">⏹ Clock out</button>
+        <button class="cancel" id="out-back">Back</button>
+      </div>
+    </div>
+
+    <!-- 4. confirmation -->
+    <div class="screen" id="s-done">
+      <div class="done"><div class="tick">✅</div><div class="msg" id="done-msg"></div></div>
+    </div>
   </main>
 
-  <div class="overlay" id="overlay">
-    <div class="sheet">
-      <div id="panel-start" style="display:none;">
-        <h2 id="start-name"></h2>
-        <p class="muted">Starting work now</p>
-        <form method="post" action="/driver/clock/{{ clock_point.token }}/start">
-          <input type="hidden" name="driver_id" id="start-driver-id">
-          <button class="big-btn start-btn" type="submit">▶️ Clock In</button>
-        </form>
-      </div>
-      <div id="panel-finish" style="display:none;">
-        <h2 id="finish-name"></h2>
-        <p class="muted">Clocked in since <span id="finish-since"></span></p>
-        <form method="post" action="/driver/clock/{{ clock_point.token }}/finish">
-          <input type="hidden" name="driver_id" id="finish-driver-id">
-          <label for="driving_hours">Your driving hours today (from the tacho)</label>
-          <input type="number" step="0.25" min="0" id="driving_hours" name="driving_hours" required placeholder="e.g. 4">
-          <div class="hint">Enter this after your last drop-off — you can't finish work without it.</div>
-          <button class="big-btn finish-btn" type="submit">⏹ Clock Out</button>
-        </form>
-      </div>
-      <button class="cancel-btn" onclick="closeSheet()">Cancel</button>
-    </div>
-  </div>
-
   <script>
-    const overlay = document.getElementById('overlay');
-    function closeSheet() { overlay.classList.remove('open'); }
+    const TOKEN = '{{ clock_point.token }}';
+    const base = '/driver/clock/' + TOKEN;
+    const $ = (id) => document.getElementById(id);
+    const screens = ['s-names', 's-pin', 's-actions', 's-vehicle', 's-out', 's-done'];
+    let driver = null, pin = '', status = null, idleTimer = null;
+    const hasVehicles = {{ 'true' if vehicles else 'false' }};
 
-    document.querySelectorAll('.name-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const active = btn.dataset.active === 'true';
-        document.getElementById('panel-start').style.display = active ? 'none' : 'block';
-        document.getElementById('panel-finish').style.display = active ? 'block' : 'none';
-        if (active) {
-          document.getElementById('finish-name').textContent = btn.dataset.name;
-          document.getElementById('finish-since').textContent = btn.dataset.since;
-          document.getElementById('finish-driver-id').value = btn.dataset.id;
-        } else {
-          document.getElementById('start-name').textContent = btn.dataset.name;
-          document.getElementById('start-driver-id').value = btn.dataset.id;
-        }
-        overlay.classList.add('open');
-      });
+    function show(id) {
+      screens.forEach(s => $(s).classList.toggle('active', s === id));
+      $('head-sub').textContent = id === 's-names' ? 'Tap your name' : '';
+      clearTimeout(idleTimer);
+      // back to the name list if nobody touches the screen for a while
+      if (id !== 's-names' && id !== 's-done') idleTimer = setTimeout(reset, 45000);
+    }
+    function reset() { driver = null; pin = ''; status = null; $('pin-err').textContent = ''; renderDots(); show('s-names'); refreshStates(); }
+    async function post(path, data) {
+      const res = await fetch(base + path, { method: 'POST', body: new URLSearchParams(data) });
+      let body = {}; try { body = await res.json(); } catch (e) {}
+      return { ok: res.ok && body.ok, body };
+    }
+
+    // --- names
+    document.querySelectorAll('.name-btn').forEach(btn => btn.addEventListener('click', () => {
+      driver = { id: btn.dataset.id, name: btn.dataset.name }; pin = ''; renderDots();
+      $('pin-name').textContent = driver.name; $('pin-err').textContent = ''; show('s-pin');
+    }));
+    const LABELS = { driving: 'Driving', on_shift: 'On shift', out: 'Not clocked in' };
+    async function refreshStates() {
+      try {
+        const r = await fetch(base + '/states'); if (!r.ok) return;
+        const states = await r.json();
+        document.querySelectorAll('.name-btn').forEach(b => {
+          const st = states[b.dataset.id] || 'out';
+          b.className = 'name-btn ' + st; b.querySelector('small').textContent = LABELS[st];
+        });
+      } catch (e) {}
+    }
+    setInterval(() => { if ($('s-names').classList.contains('active')) refreshStates(); }, 20000);
+
+    // --- PIN pad
+    function renderDots() { $('pin-dots').innerHTML = '<i></i>'.repeat(pin.length); $('pin-ok').disabled = pin.length < 4; }
+    $('pad').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b || b.id === 'pin-ok') return;
+      if (b.dataset.k === 'back') pin = pin.slice(0, -1); else if (pin.length < 8) pin += b.dataset.k;
+      $('pin-err').textContent = ''; renderDots(); show('s-pin');
     });
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSheet(); });
+    $('pin-cancel').onclick = reset;
+    $('pin-ok').onclick = async () => {
+      $('pin-ok').disabled = true;
+      const r = await post('/verify', { driver_id: driver.id, pin });
+      if (!r.ok) { $('pin-err').textContent = r.body.error || 'Something went wrong'; pin = ''; renderDots(); return; }
+      status = r.body; showActions();
+    };
+
+    // --- actions
+    function actionButton(label, cls, fn) {
+      const b = document.createElement('button'); b.className = 'big ' + cls; b.textContent = label; b.onclick = fn; return b;
+    }
+    function showActions() {
+      $('act-name').textContent = driver.name; $('act-err').textContent = '';
+      const box = $('act-buttons'); box.innerHTML = '';
+      if (status.state === 'out') {
+        $('act-sub').textContent = 'You are not clocked in';
+        box.append(actionButton('▶️  Clock in', 'green', () => act('clock_in')));
+      } else if (status.state === 'on_shift') {
+        $('act-sub').textContent = 'Clocked in since ' + status.since;
+        box.append(actionButton('🚛  Start driving', 'green', () => hasVehicles ? show('s-vehicle') : act('start_driving')));
+        box.append(actionButton('⏹  Clock out', 'orange', showClockOut));
+      } else {
+        $('act-sub').textContent = 'Driving since ' + status.driving_since + ' · clocked in since ' + status.since;
+        box.append(actionButton('🛑  Stop driving', 'dark', () => act('stop_driving')));
+        box.append(actionButton('⏹  Clock out', 'orange', showClockOut));
+      }
+      show('s-actions');
+    }
+    $('act-cancel').onclick = reset;
+    document.querySelectorAll('#s-vehicle [data-vid]').forEach(b => b.onclick = () => act('start_driving', { vehicle_id: b.dataset.vid }));
+    $('veh-skip').onclick = () => act('start_driving');
+    $('veh-back').onclick = showActions;
+
+    function showClockOut() {
+      const tracked = status.driving_hours_today || 0;
+      const prefill = status.tacho_prefill != null ? status.tacho_prefill : (Math.round(tracked * 4) / 4);
+      $('out-hours').value = prefill;
+      $('out-sub').textContent = 'Clocked in since ' + status.since;
+      $('out-hint').textContent = tracked > 0
+        ? 'Tracked driving today: ' + tracked.toFixed(2) + ' h. Change it to match your tacho if it\'s different.'
+        : 'Enter this after your last drop-off — you can\'t clock out without it.';
+      $('out-err').textContent = ''; show('s-out');
+    }
+    $('out-back').onclick = showActions;
+    $('out-go').onclick = () => act('clock_out', { driving_hours: $('out-hours').value });
+
+    async function act(action, extra) {
+      const r = await post('/action', Object.assign({ driver_id: driver.id, pin, action }, extra || {}));
+      if (!r.ok) {
+        const msg = r.body.error || 'Something went wrong';
+        if ($('s-out').classList.contains('active')) $('out-err').textContent = msg;
+        else { $('act-err').textContent = msg; show('s-actions'); }
+        return;
+      }
+      $('done-msg').textContent = r.body.message; show('s-done');
+      driver = null; pin = ''; status = null;
+      setTimeout(reset, 3500);
+    }
+
+    // keep the tablet's screen awake (where the browser allows it)
+    let wake = null;
+    async function keepAwake() { try { wake = await navigator.wakeLock.request('screen'); } catch (e) {} }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+    keepAwake();
   </script>
 </body>
 </html>

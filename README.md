@@ -423,6 +423,19 @@ username and password.
   wiping out fake test customers created during the soft rollout without
   having to delete each of their quotes/orders by hand first.
 
+## Base-tablet PIN kiosk (clock in/out and driving time)
+
+An always-on tablet at the yard where drivers tap their name and enter their PIN.
+
+**Set up**
+1. Office: *Clock Points* -> create a clock point (e.g. "Base Tablet").
+2. On the tablet open `https://tigerone.app/driver/clock/<token>` (the address/token is shown on the Clock Points page), add it to the home screen, and turn off screen lock/sleep.
+3. Drivers use their normal driver PIN.
+
+**What drivers can do:** clock in, start driving (pick the vehicle), stop driving, clock out. Driving is recorded separately from the shift, so working time and driving time are both captured. Clock-out asks for tachograph driving hours, pre-filled from tracked driving.
+
+**Security:** the PIN is re-checked on every action; 5 wrong PINs locks that driver for 60 seconds (counter is in memory, so it resets on app restart). Office users cannot use the kiosk. Reprint any old QR codes from the onrender address so they point at tigerone.app.
+
 ## Installable driver app (PWA)
 
 All driver-facing pages now link a proper web app manifest and a

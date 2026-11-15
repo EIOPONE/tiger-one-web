@@ -1721,47 +1721,100 @@ def driver_push_unsubscribe(request: Request, payload: dict = Body(...), db: Ses
     return JSONResponse({"ok": True})
 
 
-# --- driver hours: clock in/out via QR scan --------------------------------------------
-# Deliberately simple, on the office's steer: one QR code, "scan on" to
-# start work and "scan off" to finish — no activity picker. Driving hours
-# come separately from the tachograph, self-reported by the driver at
-# clock-out (see finish_work) rather than tracked live through this scan.
+# --- driver hours: the always-on base tablet (tap your name + PIN) ---------------------------
+# The page lives at the clock point's secret address, so only the tablet it's
+# set up on knows it. Every action re-checks the driver's PIN server-side,
+# so the page can't be used to clock someone in without it. A driver can
+# clock in/out and start/stop driving; driving time is tracked on top of
+# the shift (see models.DrivingSession), so working time and driving time
+# are both recorded. Clock-out still needs the tacho driving hours, now
+# pre-filled with the tracked figure.
+
+def _kiosk_point_or_404(db: Session, token: str) -> models.ClockPoint:
+    point = crud.get_clock_point_by_token(db, token)
+    if not point or not point.active:
+        raise HTTPException(status_code=404, detail="This clock-in address isn't recognised — check with the office.")
+    return point
+
+
+def _kiosk_status(db: Session, driver_id: int) -> dict:
+    shift = crud.get_active_time_entry(db, driver_id)
+    driving = crud.active_driving_session(db, driver_id)
+    return {
+        "state": "driving" if driving else ("on_shift" if shift else "out"),
+        "since": crud_uk_time(shift.started_at) if shift else "",
+        "driving_since": crud_uk_time(driving.started_at) if driving else "",
+        "driving_hours_today": crud.driving_hours_today(db, driver_id),
+        "tacho_prefill": crud.driver_tacho_hours_today(db, driver_id),
+    }
+
+
+def crud_uk_time(value) -> str:
+    return tz.uk_time_str(value)
+
 
 @app.get("/driver/clock/{token}", response_class=HTMLResponse)
-def driver_clock_page(token: str, request: Request, confirmed: str = "", db: Session = Depends(db_dependency)):
-    """No login required, deliberately — this is a small trusted team and
-    a shared office QR, so clocking in is just 'tap your name'. The rest
-    of the driver app (jobs, PODs, GPS, vehicle checks) still requires a
-    PIN login; only this specific action doesn't."""
-    point = crud.get_clock_point_by_token(db, token)
-    if not point:
-        raise HTTPException(status_code=404, detail="This clock-in code isn't recognised — check with the office.")
-    drivers = crud.list_drivers(db)
-    statuses = {d.user_id: crud.get_active_time_entry(db, d.user_id) for d in drivers}
-    confirmed_driver = next((d for d in drivers if str(d.user_id) == confirmed), None)
+def driver_clock_page(token: str, request: Request, db: Session = Depends(db_dependency)):
+    point = _kiosk_point_or_404(db, token)
     return templates.TemplateResponse(request, "driver_clock.html", {
-        "user": None, "clock_point": point, "drivers": drivers, "statuses": statuses,
-        "confirmed_driver": confirmed_driver,
+        "user": None, "clock_point": point, "drivers": crud.list_drivers(db),
+        "states": crud.driver_kiosk_states(db), "vehicles": crud.list_vehicles(db),
     })
 
 
-@app.post("/driver/clock/{token}/start")
-def driver_clock_start(token: str, request: Request, driver_id: int = Form(...),
+@app.get("/driver/clock/{token}/states")
+def driver_clock_states(token: str, db: Session = Depends(db_dependency)):
+    _kiosk_point_or_404(db, token)
+    return {str(k): v for k, v in crud.driver_kiosk_states(db).items()}
+
+
+@app.post("/driver/clock/{token}/verify")
+def driver_clock_verify(token: str, driver_id: int = Form(...), pin: str = Form(""),
                         db: Session = Depends(db_dependency)):
-    point = crud.get_clock_point_by_token(db, token)
-    if not point:
-        raise HTTPException(status_code=404, detail="Clock point not found")
-    crud.start_activity(db, driver_id, "On Shift", clock_point_id=point.clock_point_id, source="qr_scan")
-    return RedirectResponse(f"/driver/clock/{token}?confirmed={driver_id}", status_code=303)
+    _kiosk_point_or_404(db, token)
+    try:
+        driver = crud.verify_kiosk_pin(db, driver_id, pin)
+    except (PermissionError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+    return {"ok": True, "name": driver.full_name, **_kiosk_status(db, driver_id)}
 
 
-@app.post("/driver/clock/{token}/finish")
-def driver_clock_finish(token: str, request: Request, driver_id: int = Form(...),
-                         driving_hours: str = Form(...), db: Session = Depends(db_dependency)):
-    """driving_hours is required by the form itself — there's no route to
-    clocking out without it."""
-    crud.finish_work(db, driver_id, Decimal(driving_hours))
-    return RedirectResponse(f"/driver/clock/{token}?confirmed={driver_id}", status_code=303)
+@app.post("/driver/clock/{token}/action")
+def driver_clock_action(token: str, driver_id: int = Form(...), pin: str = Form(""), action: str = Form(...),
+                        vehicle_id: int = Form(0), driving_hours: str = Form(""),
+                        db: Session = Depends(db_dependency)):
+    point = _kiosk_point_or_404(db, token)
+    try:
+        driver = crud.verify_kiosk_pin(db, driver_id, pin)
+        first = driver.full_name.split(" ")[0]
+        if action == "clock_in":
+            if crud.get_active_time_entry(db, driver_id):
+                raise ValueError("You're already clocked in")
+            crud.start_activity(db, driver_id, "On Shift", clock_point_id=point.clock_point_id, source="pin_kiosk")
+            message = f"Clocked in — have a good one, {first}"
+        elif action == "start_driving":
+            crud.start_driving(db, driver_id, vehicle_id or None)
+            message = f"Driving started — drive safe, {first}"
+        elif action == "stop_driving":
+            crud.stop_driving(db, driver_id)
+            message = f"Driving stopped, {first} — still clocked in"
+        elif action == "clock_out":
+            try:
+                hours = Decimal(driving_hours)
+            except Exception:
+                raise ValueError("Enter your driving hours from the tacho")
+            if hours < 0 or hours > 24:
+                raise ValueError("Driving hours should be between 0 and 24")
+            crud.finish_work(db, driver_id, hours)
+            message = f"Clocked out — see you next time, {first}"
+        else:
+            raise ValueError("Unknown action")
+    except PermissionError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+    except ValueError as exc:
+        db.rollback()
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+    return {"ok": True, "message": message}
 
 
 # --- driver vehicle check (daily walkaround, DVSA-style) ---------------------------------
