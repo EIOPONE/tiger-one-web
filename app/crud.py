@@ -147,14 +147,26 @@ def authenticate(db: Session, username: str, password: str) -> models.AppUser | 
 
 # --- numbering -----------------------------------------------------------------
 
+def _next_number(db: Session, column, prefix: str) -> str:
+    """Next document number: one more than the highest one in use — NOT
+    'how many documents exist + 1', which collides with an existing number
+    as soon as any document has been deleted (e.g. clearing out test data)
+    and made every new order/quote fail on the unique constraint."""
+    highest = 0
+    for number in db.scalars(select(column).where(column.like(f"{prefix} %"))):
+        try:
+            highest = max(highest, int(number.split(" ", 1)[1]))
+        except (IndexError, ValueError):
+            continue
+    return f"{prefix} {highest + 1:05d}"
+
+
 def next_quote_number(db: Session) -> str:
-    count = db.scalar(select(func.count(models.Quote.quote_id))) or 0
-    return f"TCQ {count + 1:05d}"
+    return _next_number(db, models.Quote.quote_number, "TCQ")
 
 
 def next_order_number(db: Session) -> str:
-    count = db.scalar(select(func.count(models.Order.order_id))) or 0
-    return f"TCO {count + 1:05d}"
+    return _next_number(db, models.Order.order_number, "TCO")
 
 
 # --- customers / materials / products -------------------------------------------
@@ -589,7 +601,7 @@ def recipe_for_product(db: Session, product_id: int) -> list[models.Recipe]:
 
 def _prepare_items(items: list[dict]) -> tuple[list[dict], Decimal]:
     if not items:
-        raise ValueError("A quotation must contain at least one line")
+        raise ValueError("Add at least one line item (description, quantity and price) before saving")
     prepared = []
     subtotal = Decimal("0")
     for index, item in enumerate(items, start=1):

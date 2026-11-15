@@ -370,3 +370,21 @@ def test_xlsx_to_csv_text_feeds_the_importer(db):
     assert c.contact_name == "Andy Milne"
     assert c.telephone == "07970668442"
     assert c.mobile == "07970668442"  # numeric cell lost its leading 0 in Excel
+
+
+def test_new_order_and_quote_numbers_survive_deleting_earlier_ones(db):
+    """Regression: numbers were 'count + 1', so deleting any order made the
+    next one collide with an existing number and fail (Internal Server Error)."""
+    cust = crud.save_customer(db, {"customer_type": "Commercial", "display_name": "Num Test"}, sync_xero=False)
+    item = [{"product_id": None, "description": "C30", "quantity": 1, "unit": "m³", "unit_price": 100}]
+    hdr = {"customer_id": cust.customer_id, "project": "p", "site_address": "a", "status": "Draft", "tax_rate": 20}
+    orders = [crud.save_order(db, hdr, item, "t") for _ in range(3)]
+    quotes = [crud.save_quote(db, hdr, item, "t") for _ in range(3)]
+    db.commit()
+    assert [o.order_number for o in orders] == ["TCO 00001", "TCO 00002", "TCO 00003"]
+    crud.delete_order(db, orders[0].order_id)
+    crud.delete_quote(db, quotes[0].quote_id)
+    db.commit()
+    assert crud.save_order(db, hdr, item, "t").order_number == "TCO 00004"
+    assert crud.save_quote(db, hdr, item, "t").quote_number == "TCQ 00004"
+

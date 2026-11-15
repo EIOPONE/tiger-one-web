@@ -641,12 +641,18 @@ async def quotes_new(request: Request, db: Session = Depends(db_dependency)):
         for pid, desc, qty, unit, price in zip(product_ids, descriptions, quantities, units, unit_prices)
         if desc and qty
     ]
-    crud.save_quote(db, {
-        "customer_id": form["customer_id"], "project": form.get("project", ""),
-        "site_address": form.get("site_address", ""), "requested_date": form.get("requested_date", ""),
-        "status": form.get("status", "Draft"), "tax_rate": float(form.get("tax_rate") or 20),
-        "allocate_stock": form.get("allocate_stock") == "true",
-    }, items, user.full_name)
+    try:
+        if not form.get("customer_id"):
+            raise ValueError("Pick a customer from the list before saving")
+        crud.save_quote(db, {
+            "customer_id": form["customer_id"], "project": form.get("project", ""),
+            "site_address": form.get("site_address", ""), "requested_date": form.get("requested_date", ""),
+            "status": form.get("status", "Draft"), "tax_rate": float(form.get("tax_rate") or 20),
+            "allocate_stock": form.get("allocate_stock") == "true",
+        }, items, user.full_name)
+    except ValueError as exc:
+        db.rollback()
+        return _form_error_page("quote", str(exc), "/quotes")
     return RedirectResponse("/quotes", status_code=303)
 
 
@@ -901,6 +907,20 @@ def driver_jobs_snapshot(request: Request, db: Session = Depends(db_dependency))
     return {"delivery_ids": crud.active_delivery_ids_for_driver(db, user.user_id)}
 
 
+def _form_error_page(what: str, message: str, back_url: str) -> HTMLResponse:
+    """A readable 'couldn't save' page instead of a bare Internal Server
+    Error when the form's contents are the problem."""
+    from html import escape
+    return HTMLResponse(
+        f"<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
+        f"<body style='font-family:system-ui,sans-serif;max-width:520px;margin:60px auto;padding:0 20px;'>"
+        f"<h2>Couldn't save the {what}</h2><p>{escape(message)}</p>"
+        f"<p><a href='javascript:history.back()'>← Go back and fix it</a> (your entries are kept) · "
+        f"<a href='{back_url}'>Back to the list</a></p></body>",
+        status_code=400,
+    )
+
+
 def _paged(search_fn, db, q, status, page):
     requested = max(1, page)
     rows, total = search_fn(db, q, status, requested)
@@ -962,12 +982,18 @@ async def orders_new(request: Request, db: Session = Depends(db_dependency)):
         for pid, desc, qty, unit, price in zip(product_ids, descriptions, quantities, units, unit_prices)
         if desc and qty
     ]
-    crud.save_order(db, {
-        "customer_id": form["customer_id"], "project": form.get("project", ""),
-        "site_address": form.get("site_address", ""), "requested_date": form.get("requested_date", ""),
-        "status": form.get("status", "Draft"), "tax_rate": float(form.get("tax_rate") or 20),
-        "allocate_stock": form.get("allocate_stock") == "true",
-    }, items, user.full_name)
+    try:
+        if not form.get("customer_id"):
+            raise ValueError("Pick a customer from the list before saving")
+        crud.save_order(db, {
+            "customer_id": form["customer_id"], "project": form.get("project", ""),
+            "site_address": form.get("site_address", ""), "requested_date": form.get("requested_date", ""),
+            "status": form.get("status", "Draft"), "tax_rate": float(form.get("tax_rate") or 20),
+            "allocate_stock": form.get("allocate_stock") == "true",
+        }, items, user.full_name)
+    except ValueError as exc:
+        db.rollback()
+        return _form_error_page("order", str(exc), "/orders")
     return RedirectResponse("/orders", status_code=303)
 
 
