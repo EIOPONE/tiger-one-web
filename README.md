@@ -429,7 +429,7 @@ An always-on tablet at the yard where drivers tap their name and enter their PIN
 
 **Set up**
 1. Office: *Clock Points* -> create a clock point (e.g. "Base Tablet").
-2. On the tablet open `https://tigerone.app/driver/clock/<token>` (the address/token is shown on the Clock Points page), add it to the home screen, and turn off screen lock/sleep.
+2. On the tablet open `https://tigerone.app/driver/clock/<token>` (each clock point shows its kiosk address with Open and Copy buttons on the Clock Points page), add it to the home screen, and turn off screen lock/sleep.
 3. Drivers use their normal driver PIN.
 
 **What drivers can do:** clock in, start driving (pick the vehicle), stop driving, clock out. Driving is recorded separately from the shift, so working time and driving time are both captured. Clock-out asks for tachograph driving hours, pre-filled from tracked driving.

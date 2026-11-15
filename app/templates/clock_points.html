@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Clock Points — Tiger One{% endblock %}
 {% block page_title %}Clock points{% endblock %}
-{% block page_subtitle %}QR codes for drivers to clock in/out — print one per location and stick it on the wall.{% endblock %}
+{% block page_subtitle %}Each clock point has a base-tablet kiosk address (name + PIN) and a printable QR code.{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -41,10 +41,15 @@
   <h2>All clock points</h2>
   {% if clock_points %}
   <table>
-    <tr><th>Location</th><th>QR code</th><th></th></tr>
+    <tr><th>Location</th><th>Base-tablet kiosk address</th><th>QR code</th><th></th></tr>
     {% for c in clock_points %}
     <tr>
       <td>{{ c.name }}</td>
+      <td>
+        <input type="text" readonly id="kurl{{ c.clock_point_id }}" value="{{ request.base_url }}driver/clock/{{ c.token }}" style="width:100%;min-width:260px;font-size:12px;" onclick="this.select()">
+        <a class="btn btn-primary btn-small" href="/driver/clock/{{ c.token }}" target="_blank" style="margin-top:6px;">Open kiosk</a>
+        <button class="btn btn-outline btn-small" type="button" style="margin-top:6px;" onclick="var i=document.getElementById('kurl{{ c.clock_point_id }}');i.select();navigator.clipboard&&navigator.clipboard.writeText(i.value);this.textContent='Copied';">Copy address</button>
+      </td>
       <td><a class="btn btn-outline btn-small" href="/clock-points/{{ c.clock_point_id }}/qr.png" target="_blank">View / print QR</a></td>
       <td>
         <form method="post" action="/clock-points/{{ c.clock_point_id }}/deactivate" onsubmit="return confirm('Remove {{ c.name }}? The printed QR code will stop working.');">
