@@ -1689,9 +1689,39 @@ def driver_dashboard(request: Request, db: Session = Depends(db_dependency)):
         "checked_in_today": crud.driver_has_checked_in_today(db, user.user_id),
         "active_entry": crud.get_active_time_entry(db, user.user_id),
         "first_clock_point": clock_points[0] if clock_points else None,
+        "suggested_driving_hours": round(
+            (crud.driver_tacho_hours_today(db, user.user_id) or crud.driving_hours_today(db, user.user_id)) * 4) / 4,
+        "clock_error": request.query_params.get("clock_error", ""),
         "vapid_public_key": push_client.VAPID_PUBLIC_KEY if push_client.is_configured() else "",
         "tasks": crud.entries_for_driver(db, user.user_id, date.today()),
     })
+
+
+@app.post("/driver/clock-in")
+def driver_app_clock_in(request: Request, db: Session = Depends(db_dependency)):
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    if not crud.get_active_time_entry(db, user.user_id):
+        crud.start_activity(db, user.user_id, "On Shift", source="driver_app")
+    return RedirectResponse("/driver", status_code=303)
+
+
+@app.post("/driver/clock-out")
+def driver_app_clock_out(request: Request, driving_hours: str = Form(""), db: Session = Depends(db_dependency)):
+    """Clock off from the driver page. Same rule as the kiosk: tacho driving
+    hours are required (saved via finish_work)."""
+    user = get_user_or_none(request, db)
+    if not user:
+        return RedirectResponse("/driver/login", status_code=303)
+    try:
+        hours = Decimal(driving_hours)
+        if hours < 0 or hours > 24:
+            raise ValueError
+    except Exception:
+        return RedirectResponse("/driver?clock_error=Enter+your+tacho+driving+hours+(0-24)", status_code=303)
+    crud.finish_work(db, user.user_id, hours)
+    return RedirectResponse("/driver", status_code=303)
 
 
 # --- driver push notifications ---------------------------------------------------------
